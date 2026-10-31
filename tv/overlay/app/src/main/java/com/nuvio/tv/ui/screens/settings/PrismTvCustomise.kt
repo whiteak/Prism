@@ -192,7 +192,8 @@ private fun PrismTvCustomiseScreen(onClose: () -> Unit) {
                     edit { l -> l.optJSONObject("sounds")?.optJSONObject(current.key)?.put("startMs", start)?.put("endMs", end) }
                     sub = MOMENTS.firstOrNull { it.first == current.moment }?.let { Sub.Moment(it.first, it.second) }
                 })
-                else -> Column(modifier = Modifier.fillMaxSize()) {
+                else -> Row(Modifier.fillMaxSize()) {
+                Column(modifier = Modifier.weight(0.58f).fillMaxHeight()) {
                     val heading = when (current) {
                         is Sub.Pictures -> current.slot.label + "s"
                         is Sub.Moment -> "Sound: " + current.label
@@ -291,6 +292,17 @@ private fun PrismTvCustomiseScreen(onClose: () -> Unit) {
                             }
                         }
                     }
+                }
+                Spacer(Modifier.width(36.dp))
+                PrismTvLivePreview(
+                    mode = when {
+                        current is Sub.Pictures -> PrismTvPreviewMode.Picture
+                        step == Step.Opening || step == Step.Quotes -> PrismTvPreviewMode.Opening
+                        step == Step.Profiles -> PrismTvPreviewMode.Profiles
+                        else -> PrismTvPreviewMode.Home
+                    },
+                    modifier = Modifier.weight(0.42f).padding(top = 48.dp),
+                )
                 }
             }
         }
@@ -420,6 +432,11 @@ private fun PrismTvPicturesPage(
     val pictures = PrismTvMedia.pictures(look, slot)
     val chosen = look.optJSONObject("pictureChoice")?.optString(slot.single, "")?.takeIf { it.isNotEmpty() }
     var focused by remember(slot) { mutableStateOf(pictures.firstOrNull()) }
+    // The newest copy of the picture, so a new crop shows straight away.
+    LaunchedEffect(focused?.file, slot, PrismTv.changes) {
+        PrismTvPreviewState.picture = pictures.firstOrNull { it.file == focused?.file } ?: pictures.firstOrNull()
+        PrismTvPreviewState.pictureIsLogo = slot == Slot.Logo
+    }
     Row(modifier = Modifier.fillMaxSize()) {
         LazyColumn(modifier = Modifier.weight(1f).fillMaxHeight()) {
             item("add") {
