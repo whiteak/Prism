@@ -1,0 +1,5 @@
+close_up|CloseUp|Close-up
+wanderer|Wanderer|Wanderer
+shattered|Shattered|Shattered
+guardians|Guardians|Guardians
+title|Title|Prism title
