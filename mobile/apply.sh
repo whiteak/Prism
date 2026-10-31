@@ -79,6 +79,11 @@ grep -q 'PrismCatalogSortEffect(target, gridState)' "$catalog"
 perl -0pi -e 's/(\n(\s*)color = MaterialTheme\.colorScheme\.onSurfaceVariant,\n\s*\)\n\s*\}\n)(    \}\n\}\n\n\@Composable\nprivate fun CatalogPosterTile)/$1        com.nuvio.app.prism.PrismCatalogSortRow()\n$3/' "$catalog"
 grep -q 'prism.PrismCatalogSortRow()' "$catalog"
 
+# "Still watching?" over the player, as on the TV (Customise > 12. Sleep).
+player=composeApp/src/commonMain/kotlin/com/nuvio/app/features/player/PlayerScreen.kt
+perl -0pi -e 's/\n    PlayerScreenContent\(\n/\n    com.nuvio.app.prism.PrismStillWatching(onStop = onBack) {\n    PlayerScreenContent(\n/; s/\n    \)\n\}\n\z/\n    )\n    }\n}\n/' "$player"
+grep -q 'PrismStillWatching(onStop = onBack)' "$player"; tail -3 "$player" | grep -q '^    }$'
+
 # Opening: the look's logo instead of the wordmark, and its quote where the spinner was (EditionLoadingArt.kt).
 # No spinning circle over the opening picture, here or on the first loading screen.
 shell=composeApp/src/commonMain/kotlin/com/nuvio/app/AppShellComponents.kt

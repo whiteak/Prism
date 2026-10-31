@@ -136,6 +136,7 @@ private enum class PrismCategory(val title: String, val description: String) {
     Sounds("9. Sounds", "Sound bites for each moment, chosen or random"),
     Profiles("10. Profile photos", "Photos for each profile"),
     Files("11. Save and share", "Back up everything, send your library to another device, and the Prism folder"),
+    Sleep("12. Sleep", "\"Still watching?\" after hours of playing with no touch, so the device can sleep"),
 }
 
 private enum class PictureSlot(val label: String) { Background("Background"), Opening("Opening picture"), Logo("Logo") }
@@ -698,6 +699,28 @@ private fun PrismCustomiseScreen(onClose: () -> Unit) {
                                                 val newKey = "${moment.name}#${PrismStore.newId()}"
                                                 choose(PrismFileKind.Sound) { file -> task = PrismTask.Sound(moment, file, newKey, moment.label) }
                                             }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (category == PrismCategory.Sleep) {
+                    // ---- Still watching? ----
+                    item {
+                        SettingsSection(title = "Still watching?", isTablet = false) {
+                            SettingsGroup(isTablet = false) {
+                                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Text(
+                                        "While something plays with no touch, click or key press for this long, Prism asks. With no answer in a minute it stops, so nothing plays all night.",
+                                        color = tokens.colors.textSecondary,
+                                        fontSize = 13.sp,
+                                    )
+                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        PrismSleep.STILL_WATCHING_OPTIONS.forEach { h ->
+                                            Chip(label = PrismSleep.hoursLabel(h), selected = PrismSleep.stillWatchingHours == h, onClick = { PrismSleep.changeStillWatching(h) })
                                         }
                                     }
                                 }
