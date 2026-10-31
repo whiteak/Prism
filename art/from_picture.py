@@ -83,11 +83,12 @@ def source(name):
 
 
 EXTRA = {
-    'close_up': (source('jason-prism-icon.png'), (277, 222, 977, 922)),     # the crystal, close
+    'close_up': (source('jason-prism-icon-first.png'), (277, 222, 977, 922)),     # the crystal, close
+    'first': (source('jason-prism-icon-first.png'), (0, 0, 1254, 1254)),     # the first Prism icon, whole
     'wanderer': (source('jason-prism.png'), (0, 0, 1254, 1254)),            # the first picture, whole
     'shattered': (source('jason-prism.png'), (290, 40, 990, 740)),          # its crystal breaking apart
-    'guardians': (source('jason-prism-wide.png'), (486, 340, 1186, 941)),   # the two figures under the prism
-    'title': (source('jason-prism-wide.png'), (536, 0, 1136, 600)),         # the crystal with PRISM under it
+    'guardians': (source('jason-prism-icons.png'), (486, 340, 1186, 941)),   # the two figures under the prism
+    'title': (source('jason-prism-icons.png'), (536, 0, 1136, 600)),         # the crystal with PRISM under it
 }
 for key, (picture, box) in EXTRA.items():
     sq = picture.crop(box)
