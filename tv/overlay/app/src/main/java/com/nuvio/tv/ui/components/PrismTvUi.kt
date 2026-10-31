@@ -226,11 +226,11 @@ object PrismTvRandom {
     /** A poster in the show cards' row on Home: plays a random episode of that show. */
     fun handled(context: Context, addonBaseUrl: String?, id: String, open: (String) -> Unit): Boolean {
         if (addonBaseUrl != PrismTvRows.CARD_BASE) return false
-        go(context, open, only = id)
+        go(context, only = id, open = open)
         return true
     }
 
-    fun go(context: Context, open: (String) -> Unit, only: String? = null) {
+    fun go(context: Context, only: String? = null, open: (String) -> Unit) {
         PrismTv.init(context)
         val cards = PrismTv.look?.cards.orEmpty().filter { only == null || it.id == only }
         if (cards.isEmpty()) {
