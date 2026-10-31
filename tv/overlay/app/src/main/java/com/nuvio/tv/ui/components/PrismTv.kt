@@ -39,6 +39,9 @@ class PrismTvSound(val file: String, val enabled: Boolean, val volume: Float = 1
 
 class PrismTvTitle(val id: String, val type: String, val name: String)
 
+/** Poster size, corners, names under posters and wide posters, set on the TV (kept apart from the phone's sizes). */
+class PrismTvPoster(val widthDp: Int, val cornerRadiusDp: Int, val labels: Boolean, val landscape: Boolean)
+
 /** One kind of text's font and font options, made on the phone (Customise > Text). */
 class PrismTvTextStyle(
     val font: String?,
@@ -82,6 +85,7 @@ class PrismTvLook(
     val soundChoice: Map<String, String> = emptyMap(),
     /** By area: Display, Headline, Title, Body, Label, Quote. */
     val textStyles: Map<String, PrismTvTextStyle> = emptyMap(),
+    val tvPoster: PrismTvPoster? = null,
 ) {
     /** The font one kind of text uses: its own, or else the heading or everyday font. */
     fun fontFor(area: String): String? =
@@ -175,6 +179,9 @@ class PrismTvLook(
                         }
                     }
                 },
+                tvPoster = o.optJSONObject("tvPoster")?.let { p ->
+                    PrismTvPoster(p.optInt("widthDp", 126), p.optInt("cornerRadiusDp", 12), p.optBoolean("labels", true), p.optBoolean("landscape", false))
+                },
                 soundChoice = buildMap {
                     o.optJSONObject("soundChoice")?.let { c -> c.keys().forEach { key -> c.str(key)?.let { put(key, it) } } }
                 },
@@ -189,6 +196,7 @@ internal interface PrismTvEntryPoint {
     fun themeDataStore(): com.nuvio.tv.data.local.ThemeDataStore
     fun libraryPreferences(): com.nuvio.tv.data.local.LibraryPreferences
     fun profileManager(): com.nuvio.tv.core.profile.ProfileManager
+    fun layoutPreferences(): com.nuvio.tv.data.local.LayoutPreferenceDataStore
 }
 
 object PrismTv {
@@ -382,6 +390,20 @@ object PrismTv {
                     store.setTheme(theme)
                 }
                 l.amoled?.let { store.setAmoledMode(it) }
+            }
+        }
+        l.tvPoster?.let { p ->
+            val layout = dagger.hilt.android.EntryPointAccessors
+                .fromApplication(context.applicationContext, PrismTvEntryPoint::class.java)
+                .layoutPreferences()
+            scope.launch {
+                runCatching {
+                    layout.setPosterCardWidthDp(p.widthDp)
+                    layout.setPosterCardHeightDp(p.widthDp * 3 / 2)
+                    layout.setPosterCardCornerRadiusDp(p.cornerRadiusDp)
+                    layout.setPosterLabelsEnabled(p.labels)
+                    layout.setModernLandscapePostersEnabled(p.landscape)
+                }
             }
         }
     }

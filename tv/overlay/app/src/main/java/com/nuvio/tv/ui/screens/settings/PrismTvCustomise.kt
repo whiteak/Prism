@@ -91,7 +91,8 @@ private enum class Step(val title: String, val about: String) {
     Looks("Looks", "Keep several looks and switch between them"),
     Colours("Colours", "The colour theme, your own colour, pure black"),
     Pictures("Pictures and logos", "Home backgrounds, opening pictures and logos, cropped for the TV"),
-    Fonts("Fonts", "Heading and everyday fonts, and how big text is"),
+    Fonts("Fonts", "Heading and everyday fonts, each kind of text styled, and how big text is"),
+    Posters("Posters and shapes", "Poster size, rounded corners, names under posters"),
     Opening("Opening", "How long the opening shows"),
     Quotes("Quotes", "One shows on the opening each time Prism starts"),
     Sounds("Sounds", "Sounds for moments in the app, trimmed and at their own volume"),
@@ -117,6 +118,7 @@ private sealed class Sub {
     class Crop(val slot: Slot, val file: String) : Sub()
     class Moment(val key: String, val label: String) : Sub()
     class Trim(val moment: String, val key: String) : Sub()
+    class TextArea(val area: String, val label: String) : Sub()
 }
 
 @Composable
@@ -188,6 +190,7 @@ private fun PrismTvCustomiseScreen(onClose: () -> Unit) {
                     val heading = when (current) {
                         is Sub.Pictures -> current.slot.label + "s"
                         is Sub.Moment -> "Sound: " + current.label
+                        is Sub.TextArea -> "Text: " + current.label
                         else -> step?.let { "${it.ordinal + 1}. ${it.title}" } ?: "Customise"
                     }
                     Text(heading, color = NuvioTheme.colors.TextPrimary, fontSize = 28.sp)
@@ -200,6 +203,7 @@ private fun PrismTvCustomiseScreen(onClose: () -> Unit) {
                     Spacer(Modifier.height(12.dp))
                     when {
                         current is Sub.Pictures -> PrismTvPicturesPage(look, current.slot, ::edit, ::pick, ::toast, openCrop = { sub = Sub.Crop(current.slot, it) })
+                        current is Sub.TextArea -> PrismTvTextAreaPage(look, current.area, ::edit)
                         current is Sub.Moment -> PrismTvMomentPage(look, current.key, current.label, ::edit, ::pick, ::toast, openTrim = { sub = Sub.Trim(current.key, it) })
                         step == null -> LazyColumn {
                             Step.entries.forEach { s ->
@@ -251,10 +255,11 @@ private fun PrismTvCustomiseScreen(onClose: () -> Unit) {
                                 SettingsActionRow(title = "Logos", subtitle = "Under 3. Pictures and logos", value = "${PrismTvMedia.pictures(look, Slot.Logo).size}", onClick = { sub = Sub.Pictures(Slot.Logo) })
                             }
                             item("sound") {
-                                SettingsActionRow(title = "Opening sound", subtitle = "Under 7. Sounds", onClick = { sub = Sub.Moment("Opening", MOMENTS.first().second) })
+                                SettingsActionRow(title = "Opening sound", subtitle = "Under 8. Sounds", onClick = { sub = Sub.Moment("Opening", MOMENTS.first().second) })
                             }
                         }
-                        step == Step.Fonts -> PrismTvFontsPage(look, ::edit, ::pick, ::toast)
+                        step == Step.Fonts -> PrismTvFontsPage(look, ::edit, ::pick, ::toast, openArea = { a, l -> sub = Sub.TextArea(a, l) })
+                        step == Step.Posters -> PrismTvPostersPage(context, look, ::edit)
                         step == Step.Quotes -> PrismTvQuotesPage(context, look, ::edit)
                         step == Step.Sounds -> LazyColumn {
                             item("on") {
@@ -581,6 +586,7 @@ private fun PrismTvFontsPage(
     edit: ((JSONObject) -> Unit) -> Unit,
     pick: (String, String, (String) -> Unit) -> Unit,
     toast: (String) -> Unit,
+    openArea: (String, String) -> Unit,
 ) {
     val context = LocalContext.current
     val fontFiles = remember(PrismTv.changes) { PrismTvMedia.fontFiles(context) }
@@ -612,6 +618,12 @@ private fun PrismTvFontsPage(
                 }
             })
         }
+        TEXT_AREAS.forEach { (area, label, about) ->
+            item("area-$area") {
+                val styled = look.optJSONObject("textStyles")?.optJSONObject(area)?.length()?.let { it > 0 } == true
+                SettingsActionRow(title = label, subtitle = about, value = if (styled) "Styled" else null, onClick = { openArea(area, label) })
+            }
+        }
         item("size") {
             val sizes = kotlin.collections.listOf(0.85, 1.0, 1.15, 1.3)
             val size = look.optDouble("textSize", 1.0).let { s -> sizes.minBy { kotlin.math.abs(it - s) } }
@@ -625,7 +637,184 @@ private fun PrismTvFontsPage(
     }
 }
 
-// ---- 6. Quotes ----
+/** The kinds of text that can each be styled, as on the phone. */
+private val TEXT_AREAS = listOf(
+    Triple("Display", "Big titles", "The largest text, like titles on the details page"),
+    Triple("Headline", "Page headings", "Headings at the top of pages and big sections"),
+    Triple("Title", "Row and card titles", "Home row names, show names and list titles"),
+    Triple("Body", "Everyday text", "Descriptions, settings and most other text"),
+    Triple("Label", "Buttons and labels", "Buttons, chips, tabs and small labels"),
+    Triple("Quote", "Quotes", "Your quotes on the opening screen and the screensaver"),
+)
+
+private val TEXT_COLOURS = listOf(
+    "White" to 0xFFFFFFFFL, "Black" to 0xFF000000L, "Violet" to 0xFF8E6CFFL, "Opal" to 0xFF7FD8D0L, "Gold" to 0xFFE0B84BL,
+    "Crimson" to 0xFFD8334AL, "Rose" to 0xFFF07AA0L, "Ocean" to 0xFF2E86DEL, "Emerald" to 0xFF2ECC71L, "Amber" to 0xFFF39C12L,
+)
+
+@Composable
+private fun PrismTvTextAreaPage(look: JSONObject, area: String, edit: ((JSONObject) -> Unit) -> Unit) {
+    val context = LocalContext.current
+    val st = look.optJSONObject("textStyles")?.optJSONObject(area) ?: JSONObject()
+    fun change(block: (JSONObject) -> Unit) = edit { l ->
+        val all = l.optJSONObject("textStyles") ?: JSONObject().also { l.put("textStyles", it) }
+        val one = all.optJSONObject(area) ?: JSONObject().also { all.put(area, it) }
+        block(one)
+    }
+    fun <T> cycle(options: List<T>, current: T): T = options[(options.indexOf(current) + 1) % options.size]
+    fun colourName(v: Long?) = v?.let { c -> TEXT_COLOURS.firstOrNull { it.second == c }?.first ?: "#%06X".format(c and 0xFFFFFF) }
+    fun colourOf(key: String): Long? = if (st.has(key) && !st.isNull(key)) st.optLong(key) else null
+    fun nextColour(current: Long?): Long? {
+        val i = TEXT_COLOURS.indexOfFirst { it.second == current }
+        return if (i == TEXT_COLOURS.size - 1) null else TEXT_COLOURS[i + 1].second
+    }
+    val fontFiles = remember(PrismTv.changes) { PrismTvMedia.fontFiles(context) }
+    val fonts = kotlin.collections.listOf<String?>(null, "sans", "serif", "mono", "cursive") + fontFiles.map { "file:$it" }
+    // A sample in this kind of text, as it looks now.
+    val sample = TEXT_AREAS.firstOrNull { it.first == area }?.second ?: area
+    Column {
+        val base = androidx.tv.material3.MaterialTheme.typography.headlineSmall
+        Text(
+            if (area == "Quote") "\u201CA quote you love\u201D" else sample,
+            style = com.nuvio.tv.ui.components.prismTvStyled(base, area),
+            color = NuvioTheme.colors.TextPrimary,
+            modifier = Modifier.padding(vertical = 12.dp),
+        )
+        LazyColumn {
+            item("font") {
+                val current = st.optString("font", "").takeIf { it.isNotBlank() }
+                SettingsActionRow(title = "Font", subtitle = "Press to try the next one", value = current?.removePrefix("file:")?.substringBeforeLast('.') ?: "The look's own", onClick = {
+                    val list = if (current in fonts) fonts else fonts + current
+                    val next = cycle(list, current)
+                    change { if (next == null) it.remove("font") else it.put("font", next) }
+                })
+            }
+            item("size") {
+                val sizes = kotlin.collections.listOf(0.8, 0.9, 1.0, 1.15, 1.3, 1.5)
+                val size = st.optDouble("size", 1.0).let { v -> sizes.minBy { kotlin.math.abs(it - v) } }
+                SettingsActionRow(title = "Size", subtitle = null, value = "${(size * 100).toInt()}%", onClick = { change { it.put("size", cycle(sizes, size)) } })
+            }
+            item("weight") {
+                val weights = kotlin.collections.listOf<Int?>(null, 300, 400, 500, 700, 900)
+                val names = mapOf(null to "As designed", 300 to "Light", 400 to "Regular", 500 to "Medium", 700 to "Bold", 900 to "Black")
+                val w = if (st.has("weight") && !st.isNull("weight")) st.optInt("weight") else null
+                SettingsActionRow(title = "Thickness", subtitle = null, value = names[w] ?: "$w", onClick = {
+                    val next = cycle(weights, w.takeIf { it in weights })
+                    change { if (next == null) it.remove("weight") else it.put("weight", next) }
+                })
+            }
+            item("italic") {
+                val i: Boolean? = if (st.has("italic") && !st.isNull("italic")) st.optBoolean("italic") else null
+                SettingsActionRow(title = "Slanted (italic)", subtitle = null, value = when (i) { null -> "As designed"; true -> "On"; false -> "Off" }, onClick = {
+                    change { when (i) { null -> it.put("italic", true); true -> it.put("italic", false); false -> it.remove("italic") } }
+                })
+            }
+            item("spacing") {
+                val gaps = kotlin.collections.listOf(0.0, 0.05, 0.1, 0.2, -0.03)
+                val g = st.optDouble("spacing", 0.0).let { v -> gaps.minBy { kotlin.math.abs(it - v) } }
+                SettingsActionRow(title = "Space between letters", subtitle = null, value = if (g == 0.0) "Normal" else if (g < 0) "Tighter" else "Wider ${(g * 100).toInt()}", onClick = { change { it.put("spacing", cycle(gaps, g)) } })
+            }
+            item("underline") {
+                SettingsToggleRow(title = "Underlined", subtitle = null, checked = st.optBoolean("underline", false), onToggle = { change { it.put("underline", !st.optBoolean("underline", false)) } })
+            }
+            item("strike") {
+                SettingsToggleRow(title = "Line through", subtitle = null, checked = st.optBoolean("strike", false), onToggle = { change { it.put("strike", !st.optBoolean("strike", false)) } })
+            }
+            item("outline") {
+                SettingsToggleRow(title = "Hollow outlined letters", subtitle = null, checked = st.optBoolean("outline", false), onToggle = { change { it.put("outline", !st.optBoolean("outline", false)) } })
+            }
+            item("effect") {
+                val effects = kotlin.collections.listOf<String?>(null, "shadow", "glow")
+                val e = st.optString("effect", "").takeIf { it.isNotBlank() }
+                SettingsActionRow(title = "Shadow or glow", subtitle = null, value = when (e) { "shadow" -> "Shadow"; "glow" -> "Glow"; else -> "Neither" }, onClick = {
+                    val next = cycle(effects, e)
+                    change { if (next == null) it.remove("effect") else it.put("effect", next) }
+                })
+            }
+            item("effectColour") {
+                val c = colourOf("effectColor") ?: 0xFF000000L
+                SettingsActionRow(title = "Shadow or glow colour", subtitle = null, value = colourName(c), onClick = { change { it.put("effectColor", nextColour(c) ?: TEXT_COLOURS.first().second) } })
+            }
+            item("colour") {
+                val c = colourOf("colour")
+                SettingsActionRow(title = "Colour", subtitle = "Over the app's own colour", value = colourName(c) ?: "The app's own", onClick = {
+                    val next = nextColour(c)
+                    change { if (next == null) { it.remove("colour"); it.remove("colour2") } else it.put("colour", next) }
+                })
+            }
+            item("colour2") {
+                val c = colourOf("colour2")
+                SettingsActionRow(title = "Fades into", subtitle = "A second colour across the letters", value = colourName(c) ?: "No fade", enabled = colourOf("colour") != null, onClick = {
+                    val next = nextColour(c)
+                    change { if (next == null) it.remove("colour2") else it.put("colour2", next) }
+                })
+            }
+            item("highlight") {
+                val c = colourOf("highlight")
+                SettingsActionRow(title = "Highlight behind it", subtitle = null, value = colourName(c) ?: "None", onClick = {
+                    val next = nextColour(c)
+                    change { if (next == null) it.remove("highlight") else it.put("highlight", next) }
+                })
+            }
+            item("reset") {
+                SettingsActionRow(title = "Back to the look's own", subtitle = "Clears everything set here for this kind of text", onClick = {
+                    edit { l -> l.optJSONObject("textStyles")?.remove(area) }
+                })
+            }
+        }
+    }
+}
+
+// ---- 5. Posters and shapes ----
+
+@Composable
+private fun PrismTvPostersPage(context: Context, look: JSONObject, edit: ((JSONObject) -> Unit) -> Unit) {
+    val p = look.optJSONObject("tvPoster")
+    val width = p?.optInt("widthDp", 126) ?: 126
+    val radius = p?.optInt("cornerRadiusDp", 12) ?: 12
+    val labels = p?.optBoolean("labels", true) ?: true
+    val landscape = p?.optBoolean("landscape", false) ?: false
+    fun change(block: (JSONObject) -> Unit) {
+        edit { l ->
+            val one = l.optJSONObject("tvPoster")
+                ?: JSONObject().put("widthDp", width).put("cornerRadiusDp", radius).put("labels", labels).put("landscape", landscape).also { l.put("tvPoster", it) }
+            block(one)
+        }
+        PrismTv.applyColoursNow(context)
+    }
+    LazyColumn {
+        item("info") {
+            SettingsActionRow(title = "Kept with this look", subtitle = "Switching looks switches these too. Until one is changed here, the TV's own Layout settings are used", value = if (p == null) "TV's own" else "This look's", onClick = {})
+        }
+        item("width") {
+            val widths = kotlin.collections.listOf(104, 116, 126, 140, 156, 172)
+            val w = widths.minBy { kotlin.math.abs(it - width) }
+            SettingsActionRow(title = "Poster size", subtitle = null, value = when (w) { 104 -> "Smallest"; 116 -> "Small"; 126 -> "Normal"; 140 -> "Large"; 156 -> "Larger"; else -> "Largest" }, onClick = {
+                change { it.put("widthDp", widths[(widths.indexOf(w) + 1) % widths.size]) }
+            })
+        }
+        item("radius") {
+            val radii = kotlin.collections.listOf(0, 6, 12, 20, 28)
+            val r = radii.minBy { kotlin.math.abs(it - radius) }
+            SettingsActionRow(title = "Rounded corners", subtitle = null, value = when (r) { 0 -> "Square"; 6 -> "Slight"; 12 -> "Normal"; 20 -> "Round"; else -> "Very round" }, onClick = {
+                change { it.put("cornerRadiusDp", radii[(radii.indexOf(r) + 1) % radii.size]) }
+            })
+        }
+        item("labels") {
+            SettingsToggleRow(title = "Names under posters", subtitle = null, checked = labels, onToggle = { change { it.put("labels", !labels) } })
+        }
+        item("landscape") {
+            SettingsToggleRow(title = "Wide posters", subtitle = "Landscape pictures instead of tall posters, on the Modern Home layout", checked = landscape, onToggle = { change { it.put("landscape", !landscape) } })
+        }
+        if (p != null) {
+            item("reset") {
+                SettingsActionRow(title = "Use the TV's own settings", subtitle = "This look stops setting posters", onClick = { edit { it.remove("tvPoster") } })
+            }
+        }
+    }
+}
+
+// ---- 7. Quotes ----
 
 @Composable
 private fun PrismTvQuotesPage(context: Context, look: JSONObject, edit: ((JSONObject) -> Unit) -> Unit) {
@@ -654,7 +843,7 @@ private fun PrismTvQuotesPage(context: Context, look: JSONObject, edit: ((JSONOb
     }
 }
 
-// ---- 7. Sounds ----
+// ---- 8. Sounds ----
 
 @Composable
 private fun PrismTvMomentPage(
