@@ -19,4 +19,7 @@ grep -q 'PrismDesktop.windowIcon(),' "$main"
 grep -q 'PrismDesktop.install()' "$main"
 perl -0pi -e 's/onCloseRequest = ::exitApplication,/onCloseRequest = { com.nuvio.app.prism.PrismDesktop.closing(::exitApplication) },/' "$main"
 grep -q 'PrismDesktop.closing(::exitApplication)' "$main"
+# The screensaver over the whole window (Customise > 12. Sleep), as on the TV.
+perl -0pi -e 's/\n(\s*)App\(\)\n(\s*)\}\n\}/\n$1com.nuvio.app.prism.PrismScreensaverHost { App() }\n$2}\n}/' "$main"
+grep -q 'PrismScreensaverHost { App() }' "$main"
 echo "Prism applied (desktop)."

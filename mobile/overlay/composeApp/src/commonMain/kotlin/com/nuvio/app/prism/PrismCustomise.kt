@@ -136,7 +136,7 @@ private enum class PrismCategory(val title: String, val description: String) {
     Sounds("9. Sounds", "Sound bites for each moment, chosen or random"),
     Profiles("10. Profile photos", "Photos for each profile"),
     Files("11. Save and share", "Back up everything, send your library to another device, and the Prism folder"),
-    Sleep("12. Sleep", "\"Still watching?\" after hours of playing with no touch, so the device can sleep"),
+    Sleep("12. Sleep", "\"Still watching?\" after hours of playing with no touch, and the PC's screensaver"),
 }
 
 private enum class PictureSlot(val label: String) { Background("Background"), Opening("Opening picture"), Logo("Logo") }
@@ -721,6 +721,32 @@ private fun PrismCustomiseScreen(onClose: () -> Unit) {
                                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                         PrismSleep.STILL_WATCHING_OPTIONS.forEach { h ->
                                             Chip(label = PrismSleep.hoursLabel(h), selected = PrismSleep.stillWatchingHours == h, onClick = { PrismSleep.changeStillWatching(h) })
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (platform.wideScreen) {
+                        item {
+                            SettingsSection(title = "Screensaver", isTablet = false) {
+                                SettingsGroup(isTablet = false) {
+                                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        Text(
+                                            "With no click, mouse move or key on a menu for this long, the look's pictures and quotes show. Never over something playing.",
+                                            color = tokens.colors.textSecondary,
+                                            fontSize = 13.sp,
+                                        )
+                                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            PrismSleep.SAVER_OPTIONS.forEach { m ->
+                                                Chip(label = PrismSleep.minutesLabel(m), selected = PrismSleep.saverMinutes == m, onClick = { PrismSleep.changeSaver(m) })
+                                            }
+                                        }
+                                        Text("Then go dark after", color = tokens.colors.textPrimary, fontWeight = FontWeight.SemiBold)
+                                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            PrismSleep.DARK_OPTIONS.forEach { m ->
+                                                Chip(label = PrismSleep.minutesLabel(m), selected = PrismSleep.darkMinutes == m, onClick = { PrismSleep.changeDark(m) })
+                                            }
                                         }
                                     }
                                 }

@@ -49,7 +49,9 @@ jobs:
             ./gradlew :app:compileFullDebugKotlin
           else
             bash ../edition/mobile/apply.sh .
-            ./gradlew :composeApp:compileDebugKotlinAndroid
+            printf 'TRAKT_REDIRECT_URI=https://whiteak.github.io/Trakt-return/\n' > local.properties
+            # The same task as a real build (an unsigned debug APK, thrown away): the phone has no lighter one.
+            ./gradlew :androidApp:assembleFullDebug -Pnuvio.android.distribution=full -Pnuvio.ios.distribution=appstore
           fi
 
   pc:
@@ -78,4 +80,5 @@ jobs:
         run: |
           bash ../edition/mobile/apply.sh .
           bash ../edition/desktop/apply.sh .
+          printf 'TRAKT_REDIRECT_URI=https://whiteak.github.io/Trakt-return/\n' > local.properties
           ./gradlew --no-daemon :composeApp:compileKotlinDesktop
