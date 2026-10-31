@@ -37,7 +37,7 @@ class PrismTvPicture(val file: String, val wide: PrismTvCrop?)
 /** [startMs] and [endMs] trim a sound chosen on the TV (the phone trims its sounds into the file itself). */
 class PrismTvSound(val file: String, val enabled: Boolean, val volume: Float = 1f, val startMs: Int = 0, val endMs: Int = 0)
 
-class PrismTvTitle(val id: String, val type: String, val name: String)
+class PrismTvTitle(val id: String, val type: String, val name: String, val poster: String? = null)
 
 /** Poster size, corners, names under posters and wide posters, set on the TV (kept apart from the phone's sizes). */
 class PrismTvPoster(val widthDp: Int, val cornerRadiusDp: Int, val labels: Boolean, val landscape: Boolean)
@@ -134,7 +134,7 @@ class PrismTvLook(
             }
             fun title(t: JSONObject?): PrismTvTitle? = t?.let {
                 val id = it.str("id") ?: return@let null
-                PrismTvTitle(id, it.str("type") ?: "series", it.str("name") ?: "")
+                PrismTvTitle(id, it.str("type") ?: "series", it.str("name") ?: "", it.str("poster"))
             }
             val cards = buildList {
                 o.optJSONArray("showCards")?.let { a -> for (i in 0 until a.length()) title(a.optJSONObject(i))?.let(::add) }

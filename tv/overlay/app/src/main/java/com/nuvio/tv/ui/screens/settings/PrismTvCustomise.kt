@@ -145,7 +145,7 @@ private fun PrismTvCustomiseScreen(onClose: () -> Unit) {
     fun back() {
         when {
             sub is Sub.Crop -> sub = Sub.Pictures((sub as Sub.Crop).slot)
-            sub is Sub.Trim -> sub = MOMENTS.firstOrNull { it.first == (sub as Sub.Trim).moment }?.let { Sub.Moment(it.first, it.second) }
+            sub is Sub.Trim -> sub = (sub as Sub.Trim).moment.let { m -> MOMENTS.firstOrNull { it.first == m }?.let { Sub.Moment(it.first, it.second) } ?: Sub.Moment(m, "Card sound") }
             sub != null -> sub = null
             step != null -> step = null
             else -> onClose()
@@ -190,7 +190,7 @@ private fun PrismTvCustomiseScreen(onClose: () -> Unit) {
                 })
                 current is Sub.Trim -> PrismTvTrimEditor(look, current.key, onDone = { start, end ->
                     edit { l -> l.optJSONObject("sounds")?.optJSONObject(current.key)?.put("startMs", start)?.put("endMs", end) }
-                    sub = MOMENTS.firstOrNull { it.first == current.moment }?.let { Sub.Moment(it.first, it.second) }
+                    sub = MOMENTS.firstOrNull { it.first == current.moment }?.let { Sub.Moment(it.first, it.second) } ?: Sub.Moment(current.moment, "Card sound")
                 })
                 else -> Row(Modifier.fillMaxSize()) {
                 Column(modifier = Modifier.weight(0.58f).fillMaxHeight()) {
@@ -214,7 +214,7 @@ private fun PrismTvCustomiseScreen(onClose: () -> Unit) {
                         current is Sub.Pictures -> PrismTvPicturesPage(look, current.slot, ::edit, ::pick, ::toast, openCrop = { sub = Sub.Crop(current.slot, it) })
                         current is Sub.TextArea -> PrismTvTextAreaPage(look, current.area, ::edit)
                         current is Sub.Row -> PrismTvRowPage(look, current.id, ::edit, onGone = { sub = null })
-                        current is Sub.Cards -> PrismTvCardsPage(look, ::edit)
+                        current is Sub.Cards -> PrismTvCardsPage(look, ::edit, openSound = { key, label -> sub = Sub.Moment(key, label) })
                         current is Sub.Moment -> PrismTvMomentPage(look, current.key, current.label, ::edit, ::pick, ::toast, openTrim = { sub = Sub.Trim(current.key, it) })
                         step == null -> LazyColumn {
                             Step.entries.forEach { s ->
@@ -1144,7 +1144,7 @@ private fun PrismTvRowPage(look: JSONObject, id: String, edit: ((JSONObject) -> 
 }
 
 @Composable
-private fun PrismTvCardsPage(look: JSONObject, edit: ((JSONObject) -> Unit) -> Unit) {
+private fun PrismTvCardsPage(look: JSONObject, edit: ((JSONObject) -> Unit) -> Unit, openSound: (String, String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val cards = PrismTvHome.cards(look)
@@ -1161,8 +1161,11 @@ private fun PrismTvCardsPage(look: JSONObject, edit: ((JSONObject) -> Unit) -> U
         }
         cards.forEachIndexed { i, c ->
             item("c$i") {
-                SettingsActionRow(title = c.optString("name"), subtitle = null, onClick = {
-                    prismChoose(context, c.optString("name"), listOf("Move earlier", "Move later", "Remove")) { which ->
+                val soundKey = "card:${c.optString("type", "series")}:${c.optString("id")}"
+                val ownSounds = PrismTvMedia.soundKeys(look, soundKey).size
+                SettingsActionRow(title = c.optString("name"), subtitle = if (ownSounds > 0) "Its own sound plays first" else "Plays the Play random episode sound", onClick = {
+                    prismChoose(context, c.optString("name"), listOf("Move earlier", "Move later", "Remove", "Its own sound")) { which ->
+                        if (which == 3) { openSound(soundKey, "Sound for " + c.optString("name")); return@prismChoose }
                         edit { l ->
                             val list = PrismTvHome.cards(l)
                             l.remove("showCard")

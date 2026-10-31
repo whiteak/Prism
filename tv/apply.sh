@@ -143,6 +143,11 @@ grep -q 'PrismTvAvatars.url(profile.id)' "$psel"
 perl -0pi -e 's/val activeProfileAvatarImageUrl = remember\(activeProfile, avatarCatalog\) \{/val activeProfileAvatarImageUrl = com.nuvio.tv.ui.components.PrismTvAvatars.url(activeProfile?.id) ?: remember(activeProfile, avatarCatalog) {/' "$main"
 grep -q 'PrismTvAvatars.url(activeProfile?.id)' "$main"
 
+# The show cards' row on Home: a poster there plays a random episode of that show, after its sound.
+nav=app/src/main/java/com/nuvio/tv/ui/navigation/NuvioNavHost.kt
+perl -0pi -e 's/(\n(\s*)HomeScreen\(\n\s*onNavigateToDetail = \{ itemId, itemType, addonBaseUrl ->\n)/$1$2        if (com.nuvio.tv.ui.components.PrismTvRandom.handled(context, addonBaseUrl, itemId) { navController.navigate(it) }) return\@HomeScreen\n/' "$nav"
+grep -q 'PrismTvRandom.handled(context, addonBaseUrl, itemId)' "$nav"
+
 # The look's fonts (headings and everyday text) and text size.
 tt=app/src/main/java/com/nuvio/tv/ui/theme/Theme.kt
 perl -0pi -e 's/val typography = buildNuvioTypography\(getFontFamily\(appFont\)\)/val typography = com.nuvio.tv.ui.components.prismTvTypography(getFontFamily(appFont)) { buildNuvioTypography(it) }/; s/(typography = typography,\n\s*)content = content/${1}content = { com.nuvio.tv.ui.components.PrismTvTextSize(content) }/' "$tt"

@@ -223,11 +223,18 @@ object PrismTvRandom {
     private var busySince = 0L
 
     /** Picks one of the look's show cards and a random episode, plays the card's sound, then opens the streams. */
-    fun go(context: Context, open: (String) -> Unit) {
+    /** A poster in the show cards' row on Home: plays a random episode of that show. */
+    fun handled(context: Context, addonBaseUrl: String?, id: String, open: (String) -> Unit): Boolean {
+        if (addonBaseUrl != PrismTvRows.CARD_BASE) return false
+        go(context, open, only = id)
+        return true
+    }
+
+    fun go(context: Context, open: (String) -> Unit, only: String? = null) {
         PrismTv.init(context)
-        val cards = PrismTv.look?.cards.orEmpty()
+        val cards = PrismTv.look?.cards.orEmpty().filter { only == null || it.id == only }
         if (cards.isEmpty()) {
-            Toast.makeText(context, "Add show cards in Prism on the phone, then load the look here", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Add show cards in Customise > Home first", Toast.LENGTH_LONG).show()
             return
         }
         val now = android.os.SystemClock.elapsedRealtime()

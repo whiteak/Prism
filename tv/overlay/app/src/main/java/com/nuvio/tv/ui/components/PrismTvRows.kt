@@ -24,6 +24,9 @@ class PrismTvRow(val id: String, val title: String, val items: List<PrismTvRowIt
 
 object PrismTvRows {
     const val CINEMETA = "https://v3-cinemeta.strem.io"
+    /** Cinemeta too (addresses lose their end slashes before use), but marks the show cards' row, whose posters
+     *  play a random episode instead of opening the show. */
+    const val CARD_BASE = "$CINEMETA//"
 
     fun parse(o: JSONObject): List<PrismTvRow> = buildList {
         val rows = o.optJSONArray("rows") ?: return@buildList
@@ -52,8 +55,24 @@ object PrismTvRows {
     /** Puts the look's rows first among Home's catalog rows. */
     fun inject(state: Pair<List<String>, Map<String, CatalogRow>>): Pair<List<String>, Map<String, CatalogRow>> {
         val rows = PrismTv.look?.rows.orEmpty().filter { it.items.isNotEmpty() }
-        if (rows.isEmpty()) return state
-        val made = rows.map { r ->
+        val cards = PrismTv.look?.cards.orEmpty()
+        if (rows.isEmpty() && cards.isEmpty()) return state
+        val cardRow = cards.takeIf { it.isNotEmpty() }?.let { list ->
+            CatalogRow(
+                addonId = "com.linvo.cinemeta",
+                addonName = "Prism",
+                addonBaseUrl = CARD_BASE,
+                catalogId = "prism_cards",
+                catalogName = "Play random episode",
+                type = ContentType.SERIES,
+                items = list.map { c ->
+                    val poster = c.poster ?: c.id.takeIf { it.startsWith("tt") }?.let { "https://images.metahub.space/poster/medium/$it/img" }
+                    PrismTvRowItem(c.id, c.type, c.name, poster, null).toPreview()
+                },
+                hasMore = false,
+            )
+        }
+        val made = listOfNotNull(cardRow) + rows.map { r ->
             val items = r.items.map { it.toPreview() }
             CatalogRow(
                 addonId = "com.linvo.cinemeta",
