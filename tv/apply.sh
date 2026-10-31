@@ -83,6 +83,9 @@ for k in Modern Grid Classic; do
   sed -i '0,/^import /s//import com.nuvio.tv.ui.components.prismBackdrop\nimport /' "$f2"
   grep -q 'then(Modifier.prismBackdrop())' "$f2"
 done
+# The look's hero clips, playing silently behind Home (over the background picture, under the rows).
+perl -0pi -e 's/(\.then\(Modifier\.prismBackdrop\(\)\)(?:\)|\n\s*\)) \{\n)/$1        com.nuvio.tv.ui.components.PrismTvHeroClips()\n/' "$home/ModernHomeContent.kt" "$home/GridHomeContent.kt" "$home/ClassicHomeContent.kt"
+for k in Modern Grid Classic; do grep -q 'PrismTvHeroClips()' "$home/${k}HomeContent.kt"; done
 
 # Sounds: picking a profile, an empty search, nothing to play.
 prof=app/src/main/java/com/nuvio/tv/ui/screens/profile/ProfileSelectionScreen.kt

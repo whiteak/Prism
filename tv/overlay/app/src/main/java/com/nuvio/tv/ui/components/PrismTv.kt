@@ -87,6 +87,10 @@ class PrismTvLook(
     val textStyles: Map<String, PrismTvTextStyle> = emptyMap(),
     val tvPoster: PrismTvPoster? = null,
     val rows: List<PrismTvRow> = emptyList(),
+    /** Hero clips: short videos playing silently behind Home (media file names). */
+    val clips: List<String> = emptyList(),
+    val clipsOn: Boolean = true,
+    val clipsInOrder: Boolean = false,
 ) {
     /** The font one kind of text uses: its own, or else the heading or everyday font. */
     fun fontFor(area: String): String? =
@@ -181,6 +185,9 @@ class PrismTvLook(
                     }
                 },
                 rows = PrismTvRows.parse(o),
+                clips = buildList { o.optJSONArray("clips")?.let { a -> for (i in 0 until a.length()) a.optJSONObject(i)?.str("file")?.let(::add) } },
+                clipsOn = o.optBoolean("clipsOn", true),
+                clipsInOrder = o.optBoolean("clipsInOrder", false),
                 tvPoster = o.optJSONObject("tvPoster")?.let { p ->
                     PrismTvPoster(p.optInt("widthDp", 126), p.optInt("cornerRadiusDp", 12), p.optBoolean("labels", true), p.optBoolean("landscape", false))
                 },

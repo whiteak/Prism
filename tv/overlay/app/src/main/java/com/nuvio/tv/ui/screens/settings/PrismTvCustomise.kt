@@ -95,7 +95,7 @@ private enum class Step(val title: String, val about: String) {
     Profiles("Profile photos", "A photo of your own for each profile, kept on this TV"),
     Fonts("Fonts", "Heading and everyday fonts, each kind of text styled, and how big text is"),
     Posters("Posters and shapes", "Poster size, rounded corners, names under posters"),
-    Home("Home", "Your own rows of movies and shows, and show cards for Play random episode"),
+    Home("Home", "Your own rows of movies and shows, show cards for Play random episode, and hero clips"),
     Opening("Opening", "How long the opening shows"),
     Quotes("Quotes", "One shows on the opening each time Prism starts"),
     Sounds("Sounds", "Sounds for moments in the app, trimmed and at their own volume"),
@@ -270,7 +270,7 @@ private fun PrismTvCustomiseScreen(onClose: () -> Unit) {
                         step == Step.Fonts -> PrismTvFontsPage(look, ::edit, ::pick, ::toast, openArea = { a, l -> sub = Sub.TextArea(a, l) })
                         step == Step.Posters -> PrismTvPostersPage(context, look, ::edit)
                         step == Step.Profiles -> PrismTvProfilesPage(::pick, ::toast)
-                        step == Step.Home -> PrismTvHomePage(look, ::edit, openRow = { sub = Sub.Row(it) }, openCards = { sub = Sub.Cards })
+                        step == Step.Home -> PrismTvHomePage(look, ::edit, ::pick, ::toast, openRow = { sub = Sub.Row(it) }, openCards = { sub = Sub.Cards })
                         step == Step.Quotes -> PrismTvQuotesPage(context, look, ::edit)
                         step == Step.Sounds -> LazyColumn {
                             item("on") {
@@ -875,6 +875,7 @@ private fun PrismTvProfilesPage(pick: (String, String, (String) -> Unit) -> Unit
 internal object PrismTvHome {
     fun rows(o: JSONObject): List<JSONObject> = buildList { o.optJSONArray("rows")?.let { a -> for (i in 0 until a.length()) a.optJSONObject(i)?.let(::add) } }
     fun cards(o: JSONObject): List<JSONObject> = buildList { o.optJSONArray("showCards")?.let { a -> for (i in 0 until a.length()) a.optJSONObject(i)?.let(::add) } }
+    fun clips(o: JSONObject): List<JSONObject> = buildList { o.optJSONArray("clips")?.let { a -> for (i in 0 until a.length()) a.optJSONObject(i)?.let(::add) } }
     fun items(row: JSONObject): List<JSONObject> = buildList { row.optJSONArray("items")?.let { a -> for (i in 0 until a.length()) a.optJSONObject(i)?.let(::add) } }
 
     /** Moves [from] by [by] places in a list, returning it as an array. */
@@ -901,7 +902,7 @@ private fun prismFindTitle(context: Context, scope: kotlinx.coroutines.Coroutine
 }
 
 @Composable
-private fun PrismTvHomePage(look: JSONObject, edit: ((JSONObject) -> Unit) -> Unit, openRow: (String) -> Unit, openCards: () -> Unit) {
+private fun PrismTvHomePage(look: JSONObject, edit: ((JSONObject) -> Unit) -> Unit, pick: (String, String, (String) -> Unit) -> Unit, toast: (String) -> Unit, openRow: (String) -> Unit, openCards: () -> Unit) {
     val context = LocalContext.current
     val rows = PrismTvHome.rows(look)
     LazyColumn {
@@ -921,6 +922,45 @@ private fun PrismTvHomePage(look: JSONObject, edit: ((JSONObject) -> Unit) -> Un
         }
         item("cards") {
             SettingsActionRow(title = "Show cards", subtitle = "The shows Play random episode picks from (in the side menu)", value = "${PrismTvHome.cards(look).size}", onClick = openCards)
+        }
+        val clips = PrismTvHome.clips(look)
+        item("clipsOn") {
+            SettingsToggleRow(
+                title = "Hero clips",
+                subtitle = "Short videos playing silently behind Home. Short MP4s work best (720p or 1080p, no sound needed).",
+                checked = look.optBoolean("clipsOn", true),
+                onToggle = { edit { it.put("clipsOn", !look.optBoolean("clipsOn", true)) } },
+            )
+        }
+        item("clipsAdd") {
+            SettingsActionRow(title = "Add a clip", subtitle = "From a USB stick, the Download folder or a file manager", value = "${clips.size} clips", onClick = {
+                pick("video/*", "clip") { name ->
+                    edit { l -> (l.optJSONArray("clips") ?: JSONArray().also { l.put("clips", it) }).put(JSONObject().put("file", name).put("name", "Clip ${clips.size + 1}")) }
+                    toast("Clip added")
+                }
+            })
+        }
+        if (clips.size > 1) {
+            item("clipsOrder") {
+                SettingsToggleRow(
+                    title = "Play clips in order",
+                    subtitle = "Off shuffles them, each playing once before any plays again",
+                    checked = look.optBoolean("clipsInOrder", false),
+                    onToggle = { edit { it.put("clipsInOrder", !look.optBoolean("clipsInOrder", false)) } },
+                )
+            }
+        }
+        clips.forEachIndexed { i, c ->
+            item("clip$i") {
+                SettingsActionRow(title = c.optString("name").ifBlank { "Clip ${i + 1}" }, subtitle = null, onClick = {
+                    prismChoose(context, c.optString("name").ifBlank { "Clip ${i + 1}" }, listOf("Move earlier", "Move later", "Remove")) { which ->
+                        edit { l ->
+                            val list = PrismTvHome.clips(l)
+                            l.put("clips", if (which == 2) JSONArray(list.filterIndexed { j, _ -> j != i }) else PrismTvHome.moved(list, i, if (which == 0) -1 else 1))
+                        }
+                    }
+                })
+            }
         }
     }
 }
@@ -1218,14 +1258,21 @@ internal fun prismConfirm(context: Context, title: String, message: String, then
 
 /** Files and look changes for Customise on the TV. */
 internal object PrismTvMedia {
-    fun copyIn(context: Context, uri: Uri, kind: String): String? = runCatching {
-        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
-        val shown = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+    /** The picked file's own name, as the file manager shows it. */
+    fun shownName(context: Context, uri: Uri): String? = runCatching {
+        context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
             ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+    }.getOrNull()
+
+    fun copyIn(context: Context, uri: Uri, kind: String): String? = runCatching {
+        val shown = shownName(context, uri)
         val ext = shown?.substringAfterLast('.', "")?.lowercase()?.takeIf { it.length in 2..4 }
-            ?: when (kind) { "picture" -> "jpg"; "sound" -> "mp3"; else -> "ttf" }
+            ?: when (kind) { "picture" -> "jpg"; "sound" -> "mp3"; "clip" -> "mp4"; else -> "ttf" }
         val name = PrismTv.newId() + "." + ext
-        File(PrismTv.mediaDir(context), name).writeBytes(bytes)
+        val out = File(PrismTv.mediaDir(context), name)
+        // Streamed, so a long clip never has to fit in memory.
+        val copied = context.contentResolver.openInputStream(uri)?.use { input -> out.outputStream().use { input.copyTo(it) } }
+        if (copied == null) { out.delete(); return null }
         name
     }.getOrNull()
 
