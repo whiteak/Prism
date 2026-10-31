@@ -86,6 +86,7 @@ class PrismTvLook(
     /** By area: Display, Headline, Title, Body, Label, Quote. */
     val textStyles: Map<String, PrismTvTextStyle> = emptyMap(),
     val tvPoster: PrismTvPoster? = null,
+    val rows: List<PrismTvRow> = emptyList(),
 ) {
     /** The font one kind of text uses: its own, or else the heading or everyday font. */
     fun fontFor(area: String): String? =
@@ -179,6 +180,7 @@ class PrismTvLook(
                         }
                     }
                 },
+                rows = PrismTvRows.parse(o),
                 tvPoster = o.optJSONObject("tvPoster")?.let { p ->
                     PrismTvPoster(p.optInt("widthDp", 126), p.optInt("cornerRadiusDp", 12), p.optBoolean("labels", true), p.optBoolean("landscape", false))
                 },

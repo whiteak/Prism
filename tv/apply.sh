@@ -119,6 +119,13 @@ grep -q 'try { getStandardAvatarCatalog() }' "$avrepo"
 libscreen=app/src/main/java/com/nuvio/tv/ui/screens/library/LibraryScreen.kt
 perl -0pi -e 's/\n([ \t]*)(if \(uiState\.listManagement != null && uiState\.isTrackingAuthenticated\) \{)/\n$1if (uiState.sourceMode == com.nuvio.tv.domain.model.LibrarySourceMode.LOCAL && uiState.allItems.isNotEmpty()) {\n$1    item(span = { GridItemSpan(maxLineSpan) }) {\n$1        com.nuvio.tv.ui.components.EditionSendToPhone(uiState.allItems)\n$1    }\n$1}\n\n$1$2/' "$libscreen"
 grep -q 'EditionSendToPhone(uiState.allItems)' "$libscreen"
+# The look's own Home rows, first on Home in every layout (PrismTvRows.kt).
+hvm=app/src/main/java/com/nuvio/tv/ui/screens/home/HomeViewModel.kt
+hpipe=app/src/main/java/com/nuvio/tv/ui/screens/home/HomeViewModelCatalogPipeline.kt
+perl -0pi -e 's/\n    init \{\n/\n    init {\n        com.nuvio.tv.ui.components.PrismTvRows.start(viewModelScope) { scheduleUpdateCatalogRows() }\n/' "$hvm"
+perl -0pi -e 's/val \(orderedKeys, catalogSnapshot\) = snapshotCatalogState\(\)/val (orderedKeys, catalogSnapshot) = com.nuvio.tv.ui.components.PrismTvRows.inject(snapshotCatalogState())/' "$hpipe"
+[ "$(grep -c 'PrismTvRows.start(viewModelScope)' "$hvm")" = 1 ]
+grep -q 'PrismTvRows.inject(snapshotCatalogState())' "$hpipe"
 # The look's fonts (headings and everyday text) and text size.
 tt=app/src/main/java/com/nuvio/tv/ui/theme/Theme.kt
 perl -0pi -e 's/val typography = buildNuvioTypography\(getFontFamily\(appFont\)\)/val typography = com.nuvio.tv.ui.components.prismTvTypography(getFontFamily(appFont)) { buildNuvioTypography(it) }/; s/(typography = typography,\n\s*)content = content/${1}content = { com.nuvio.tv.ui.components.PrismTvTextSize(content) }/' "$tt"

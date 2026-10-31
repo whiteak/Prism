@@ -93,6 +93,7 @@ private enum class Step(val title: String, val about: String) {
     Pictures("Pictures and logos", "Home backgrounds, opening pictures and logos, cropped for the TV"),
     Fonts("Fonts", "Heading and everyday fonts, each kind of text styled, and how big text is"),
     Posters("Posters and shapes", "Poster size, rounded corners, names under posters"),
+    Home("Home", "Your own rows of movies and shows, and show cards for Play random episode"),
     Opening("Opening", "How long the opening shows"),
     Quotes("Quotes", "One shows on the opening each time Prism starts"),
     Sounds("Sounds", "Sounds for moments in the app, trimmed and at their own volume"),
@@ -119,6 +120,8 @@ private sealed class Sub {
     class Moment(val key: String, val label: String) : Sub()
     class Trim(val moment: String, val key: String) : Sub()
     class TextArea(val area: String, val label: String) : Sub()
+    class Row(val id: String) : Sub()
+    object Cards : Sub()
 }
 
 @Composable
@@ -191,6 +194,8 @@ private fun PrismTvCustomiseScreen(onClose: () -> Unit) {
                         is Sub.Pictures -> current.slot.label + "s"
                         is Sub.Moment -> "Sound: " + current.label
                         is Sub.TextArea -> "Text: " + current.label
+                        is Sub.Row -> "Row: " + PrismTvHome.rows(look).firstOrNull { it.optString("id") == current.id }?.optString("title").orEmpty()
+                        is Sub.Cards -> "Show cards"
                         else -> step?.let { "${it.ordinal + 1}. ${it.title}" } ?: "Customise"
                     }
                     Text(heading, color = NuvioTheme.colors.TextPrimary, fontSize = 28.sp)
@@ -204,6 +209,8 @@ private fun PrismTvCustomiseScreen(onClose: () -> Unit) {
                     when {
                         current is Sub.Pictures -> PrismTvPicturesPage(look, current.slot, ::edit, ::pick, ::toast, openCrop = { sub = Sub.Crop(current.slot, it) })
                         current is Sub.TextArea -> PrismTvTextAreaPage(look, current.area, ::edit)
+                        current is Sub.Row -> PrismTvRowPage(look, current.id, ::edit, onGone = { sub = null })
+                        current is Sub.Cards -> PrismTvCardsPage(look, ::edit)
                         current is Sub.Moment -> PrismTvMomentPage(look, current.key, current.label, ::edit, ::pick, ::toast, openTrim = { sub = Sub.Trim(current.key, it) })
                         step == null -> LazyColumn {
                             Step.entries.forEach { s ->
@@ -255,11 +262,12 @@ private fun PrismTvCustomiseScreen(onClose: () -> Unit) {
                                 SettingsActionRow(title = "Logos", subtitle = "Under 3. Pictures and logos", value = "${PrismTvMedia.pictures(look, Slot.Logo).size}", onClick = { sub = Sub.Pictures(Slot.Logo) })
                             }
                             item("sound") {
-                                SettingsActionRow(title = "Opening sound", subtitle = "Under 8. Sounds", onClick = { sub = Sub.Moment("Opening", MOMENTS.first().second) })
+                                SettingsActionRow(title = "Opening sound", subtitle = "Under 9. Sounds", onClick = { sub = Sub.Moment("Opening", MOMENTS.first().second) })
                             }
                         }
                         step == Step.Fonts -> PrismTvFontsPage(look, ::edit, ::pick, ::toast, openArea = { a, l -> sub = Sub.TextArea(a, l) })
                         step == Step.Posters -> PrismTvPostersPage(context, look, ::edit)
+                        step == Step.Home -> PrismTvHomePage(look, ::edit, openRow = { sub = Sub.Row(it) }, openCards = { sub = Sub.Cards })
                         step == Step.Quotes -> PrismTvQuotesPage(context, look, ::edit)
                         step == Step.Sounds -> LazyColumn {
                             item("on") {
@@ -814,7 +822,156 @@ private fun PrismTvPostersPage(context: Context, look: JSONObject, edit: ((JSONO
     }
 }
 
-// ---- 7. Quotes ----
+// ---- 6. Home ----
+
+/** Rows and show cards in the look's JSON, as on the phone: rows [{id, title, items [{id, type, name, poster, year}]}],
+ *  showCards [{id, type, name}]. */
+internal object PrismTvHome {
+    fun rows(o: JSONObject): List<JSONObject> = buildList { o.optJSONArray("rows")?.let { a -> for (i in 0 until a.length()) a.optJSONObject(i)?.let(::add) } }
+    fun cards(o: JSONObject): List<JSONObject> = buildList { o.optJSONArray("showCards")?.let { a -> for (i in 0 until a.length()) a.optJSONObject(i)?.let(::add) } }
+    fun items(row: JSONObject): List<JSONObject> = buildList { row.optJSONArray("items")?.let { a -> for (i in 0 until a.length()) a.optJSONObject(i)?.let(::add) } }
+
+    /** Moves [from] by [by] places in a list, returning it as an array. */
+    fun moved(list: List<JSONObject>, from: Int, by: Int): JSONArray {
+        val m = list.toMutableList()
+        val to = (from + by).coerceIn(0, m.size - 1)
+        m.add(to, m.removeAt(from))
+        return JSONArray(m)
+    }
+}
+
+/** Searches Cinemeta for what's typed and offers the results to pick from. */
+private fun prismFindTitle(context: Context, scope: kotlinx.coroutines.CoroutineScope, seriesOnly: Boolean, then: (com.nuvio.tv.ui.components.PrismTvRowItem) -> Unit) {
+    prismAsk(context, if (seriesOnly) "Find a show" else "Find a movie or show", "") { query ->
+        scope.launch {
+            val found = withContext(Dispatchers.IO) { com.nuvio.tv.ui.components.PrismTvRows.search(query) }.filter { !seriesOnly || it.type == "series" }
+            if (found.isEmpty()) {
+                Toast.makeText(context, "Nothing found for \"$query\"", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            prismChoose(context, "Pick one", found.map { "${it.name}${it.year?.let { y -> " ($y)" } ?: ""} · ${if (it.type == "series") "show" else "movie"}" }) { then(found[it]) }
+        }
+    }
+}
+
+@Composable
+private fun PrismTvHomePage(look: JSONObject, edit: ((JSONObject) -> Unit) -> Unit, openRow: (String) -> Unit, openCards: () -> Unit) {
+    val context = LocalContext.current
+    val rows = PrismTvHome.rows(look)
+    LazyColumn {
+        item("new") {
+            SettingsActionRow(title = "New row", subtitle = "A row of your own picks, shown first on Home", onClick = {
+                prismAsk(context, "Name of the row", "My favourites") { title ->
+                    val id = PrismTv.newId()
+                    edit { l -> (l.optJSONArray("rows") ?: JSONArray().also { l.put("rows", it) }).put(JSONObject().put("id", id).put("title", title).put("items", JSONArray())) }
+                    openRow(id)
+                }
+            })
+        }
+        rows.forEach { r ->
+            item(r.optString("id")) {
+                SettingsActionRow(title = r.optString("title"), subtitle = null, value = "${PrismTvHome.items(r).size} titles", onClick = { openRow(r.optString("id")) })
+            }
+        }
+        item("cards") {
+            SettingsActionRow(title = "Show cards", subtitle = "The shows Play random episode picks from (in the side menu)", value = "${PrismTvHome.cards(look).size}", onClick = openCards)
+        }
+    }
+}
+
+@Composable
+private fun PrismTvRowPage(look: JSONObject, id: String, edit: ((JSONObject) -> Unit) -> Unit, onGone: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val rows = PrismTvHome.rows(look)
+    val index = rows.indexOfFirst { it.optString("id") == id }
+    val row = rows.getOrNull(index) ?: return
+    val items = PrismTvHome.items(row)
+    fun changeRow(block: (JSONObject) -> Unit) = edit { l ->
+        PrismTvHome.rows(l).firstOrNull { it.optString("id") == id }?.let(block)
+    }
+    LazyColumn {
+        item("add") {
+            SettingsActionRow(title = "Add a movie or show", subtitle = "Type part of its name", onClick = {
+                prismFindTitle(context, scope, seriesOnly = false) { t ->
+                    changeRow { r ->
+                        (r.optJSONArray("items") ?: JSONArray().also { r.put("items", it) }).put(
+                            JSONObject().put("id", t.id).put("type", t.type).put("name", t.name).put("poster", t.poster ?: JSONObject.NULL).put("year", t.year ?: JSONObject.NULL)
+                        )
+                    }
+                }
+            })
+        }
+        item("rename") {
+            SettingsActionRow(title = "Rename the row", subtitle = null, value = row.optString("title"), onClick = {
+                prismAsk(context, "Name of the row", row.optString("title")) { t -> changeRow { it.put("title", t) } }
+            })
+        }
+        if (rows.size > 1) {
+            item("move") {
+                SettingsActionRow(title = "Move the row", subtitle = "Rows show on Home in this order", value = "${index + 1} of ${rows.size}", onClick = {
+                    prismChoose(context, "Move the row", listOf("Higher", "Lower")) { which ->
+                        edit { l -> l.put("rows", PrismTvHome.moved(PrismTvHome.rows(l), index, if (which == 0) -1 else 1)) }
+                    }
+                })
+            }
+        }
+        item("delete") {
+            SettingsActionRow(title = "Delete the row", subtitle = null, onClick = {
+                prismConfirm(context, "Delete \"${row.optString("title")}\"?", "The movies and shows stay in Prism; only this row goes.") {
+                    edit { l -> l.put("rows", JSONArray(PrismTvHome.rows(l).filter { it.optString("id") != id })) }
+                    onGone()
+                }
+            })
+        }
+        items.forEachIndexed { i, t ->
+            item("t$i") {
+                SettingsActionRow(title = t.optString("name"), subtitle = t.optString("year").takeIf { it.isNotBlank() && it != "null" }, value = if (t.optString("type") == "series") "Show" else "Movie", onClick = {
+                    prismChoose(context, t.optString("name"), listOf("Move earlier", "Move later", "Remove")) { which ->
+                        changeRow { r ->
+                            val list = PrismTvHome.items(r)
+                            r.put("items", if (which == 2) JSONArray(list.filterIndexed { j, _ -> j != i }) else PrismTvHome.moved(list, i, if (which == 0) -1 else 1))
+                        }
+                    }
+                })
+            }
+        }
+    }
+}
+
+@Composable
+private fun PrismTvCardsPage(look: JSONObject, edit: ((JSONObject) -> Unit) -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val cards = PrismTvHome.cards(look)
+    LazyColumn {
+        item("add") {
+            SettingsActionRow(title = "Add a show", subtitle = "Play random episode picks one of these shows", onClick = {
+                prismFindTitle(context, scope, seriesOnly = true) { t ->
+                    edit { l ->
+                        if (PrismTvHome.cards(l).isEmpty()) l.remove("showCard")
+                        (l.optJSONArray("showCards") ?: JSONArray().also { l.put("showCards", it) }).put(JSONObject().put("id", t.id).put("type", t.type).put("name", t.name).put("poster", t.poster ?: JSONObject.NULL).put("year", t.year ?: JSONObject.NULL))
+                    }
+                }
+            })
+        }
+        cards.forEachIndexed { i, c ->
+            item("c$i") {
+                SettingsActionRow(title = c.optString("name"), subtitle = null, onClick = {
+                    prismChoose(context, c.optString("name"), listOf("Move earlier", "Move later", "Remove")) { which ->
+                        edit { l ->
+                            val list = PrismTvHome.cards(l)
+                            l.remove("showCard")
+                            l.put("showCards", if (which == 2) JSONArray(list.filterIndexed { j, _ -> j != i }) else PrismTvHome.moved(list, i, if (which == 0) -1 else 1))
+                        }
+                    }
+                })
+            }
+        }
+    }
+}
+
+// ---- 8. Quotes ----
 
 @Composable
 private fun PrismTvQuotesPage(context: Context, look: JSONObject, edit: ((JSONObject) -> Unit) -> Unit) {
@@ -843,7 +1000,7 @@ private fun PrismTvQuotesPage(context: Context, look: JSONObject, edit: ((JSONOb
     }
 }
 
-// ---- 8. Sounds ----
+// ---- 9. Sounds ----
 
 @Composable
 private fun PrismTvMomentPage(
