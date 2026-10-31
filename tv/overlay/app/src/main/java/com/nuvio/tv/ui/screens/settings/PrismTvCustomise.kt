@@ -99,6 +99,7 @@ private enum class Step(val title: String, val about: String) {
     Opening("Opening", "How long the opening shows"),
     Quotes("Quotes", "One shows on the opening each time Prism starts"),
     Sounds("Sounds", "Sounds for moments in the app, trimmed and at their own volume"),
+    Files("Save and share", "Back up everything, and send your library to another device"),
 }
 
 /** The picture slots: the look's list of pictures, the older single one, and the slot's name for pictureChoice. */
@@ -272,6 +273,7 @@ private fun PrismTvCustomiseScreen(onClose: () -> Unit) {
                         step == Step.Profiles -> PrismTvProfilesPage(::pick, ::toast)
                         step == Step.Home -> PrismTvHomePage(look, ::edit, ::pick, ::toast, openRow = { sub = Sub.Row(it) }, openCards = { sub = Sub.Cards })
                         step == Step.Quotes -> PrismTvQuotesPage(context, look, ::edit)
+                        step == Step.Files -> PrismTvFilesPage(::toast)
                         step == Step.Sounds -> LazyColumn {
                             item("on") {
                                 SettingsToggleRow(
@@ -864,6 +866,105 @@ private fun PrismTvProfilesPage(pick: (String, String, (String) -> Unit) -> Unit
                     },
                 )
             }
+        }
+    }
+}
+
+// ---- Save and share ----
+
+@Composable
+private fun PrismTvFilesPage(toast: (String) -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val backup = com.nuvio.tv.ui.components.PrismTvBackup
+    var then by remember { mutableStateOf<((ByteArray) -> Unit)?>(null) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        val use = then ?: return@rememberLauncherForActivityResult
+        then = null
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            val bytes = withContext(Dispatchers.IO) { runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull() }
+            if (bytes == null) toast("That file couldn't be opened") else use(bytes)
+        }
+    }
+    fun open(use: (ByteArray) -> Unit) {
+        then = use
+        runCatching { picker.launch("*/*") }.onFailure {
+            then = null
+            toast("No file picker found. Install a file manager such as ES File Explorer, then try again.")
+        }
+    }
+    LazyColumn {
+        item("save") {
+            SettingsActionRow(
+                title = "Save a backup",
+                subtitle = "Everything in Prism in one file: every look, font, picture, sound and profile photo (clips aren't included, they're too big). The phone and PC can restore it too",
+                onClick = {
+                    toast("Saving the backup…")
+                    scope.launch {
+                        val where = withContext(Dispatchers.IO) {
+                            runCatching { backup.backup(context) }.getOrNull()?.let { backup.saveToDownloads(context, "Prism backup.prismbackup", it) }
+                        }
+                        toast(if (where != null) "Backup saved in $where" else "The backup couldn't be saved")
+                    }
+                },
+            )
+        }
+        item("restore") {
+            SettingsActionRow(
+                title = "Restore a backup",
+                subtitle = "A .prismbackup file from this TV, the phone or the PC. Everything in Prism here is replaced",
+                onClick = {
+                    open { bytes ->
+                        if (!backup.isBackup(bytes)) {
+                            toast("That file isn't a Prism backup")
+                        } else {
+                            prismConfirm(context, "Restore this backup?", "Everything in Prism on this TV is replaced by what's in the backup.") {
+                                scope.launch {
+                                    val ok = withContext(Dispatchers.IO) { runCatching { backup.restore(context, bytes) }.getOrDefault(false) }
+                                    toast(if (ok) "Backup restored. Restart Prism to see the new opening." else "That backup couldn't be restored")
+                                }
+                            }
+                        }
+                    }
+                },
+            )
+        }
+        item("libSave") {
+            SettingsActionRow(
+                title = "Save library to a file",
+                subtitle = "This profile's library as a .prismlib file, to add on another device",
+                onClick = {
+                    scope.launch {
+                        val bytes = withContext(Dispatchers.IO) { runCatching { backup.libraryFile(context) }.getOrNull() }
+                        if (bytes == null) {
+                            toast("The library is empty")
+                        } else {
+                            val where = withContext(Dispatchers.IO) { backup.saveToDownloads(context, "Prism-library.prismlib", bytes) }
+                            toast(if (where != null) "Library saved in $where" else "The library couldn't be saved")
+                        }
+                    }
+                },
+            )
+        }
+        item("libAdd") {
+            SettingsActionRow(
+                title = "Add library from a file",
+                subtitle = "A .prismlib file from the phone, PC or another TV. Titles already here are skipped",
+                onClick = {
+                    open { bytes ->
+                        if (com.nuvio.tv.ui.components.PrismTvLibraryImport.isLibraryFile(bytes)) com.nuvio.tv.ui.components.PrismTvLibraryImport.import(context, bytes)
+                        else toast("That file isn't a Prism library")
+                    }
+                },
+            )
+        }
+        item("folder") {
+            SettingsActionRow(
+                title = "The Prism folder",
+                subtitle = "Files saved here go to Download/Prism. Send Anywhere puts files it receives in Download, where the file picker finds them",
+                onClick = {},
+            )
         }
     }
 }

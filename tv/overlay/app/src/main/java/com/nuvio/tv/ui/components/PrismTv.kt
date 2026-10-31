@@ -383,6 +383,15 @@ object PrismTv {
         }
     }
 
+    /** Every look on this TV with the active one, for a backup. */
+    internal fun stateForBackup(context: Context): JSONObject = readState(context)
+
+    /** Replaces every look with a backup's (their media already in [mediaDir]). */
+    internal fun restoreState(context: Context, state: JSONObject) {
+        writeState(context, state)
+        applyColoursNow(context)
+    }
+
     fun newId(): String = buildString { repeat(12) { append("abcdefghijklmnopqrstuvwxyz0123456789"[kotlin.random.Random.nextInt(36)]) } }
 
     /** Sets the TV's colours from a look (its theme, own colour and pure black). */

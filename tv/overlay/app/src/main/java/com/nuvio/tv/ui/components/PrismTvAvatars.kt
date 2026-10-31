@@ -78,4 +78,20 @@ object PrismTvAvatars {
         file(name)?.delete()
         save()
     }
+
+    /** The photo in use and the kept photos of every profile, for a backup. */
+    fun snapshot(): Pair<Map<Int, String>, Map<Int, List<String>>> {
+        load()
+        return inUse.toMap() to (inUse.keys + kept.keys).associateWith { photos(it) }
+    }
+
+    /** Replaces every profile's photos with a backup's (their files already in [file]). */
+    fun restore(using: Map<Int, String>, keeping: Map<Int, List<String>>) {
+        load()
+        val wanted = using.values.toSet() + keeping.values.flatten()
+        (inUse.values.toSet() + kept.values.flatten()).filter { it !in wanted }.forEach { file(it)?.delete() }
+        inUse.clear(); inUse.putAll(using)
+        kept.clear(); kept.putAll(keeping)
+        save()
+    }
 }
