@@ -34,6 +34,10 @@ jobs:
           KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: |
           n=$((GITHUB_RUN_NUMBER + 100))
+          if [ -z "$KEYSTORE" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "::error::Add the SIGNING_KEYSTORE and SIGNING_KEY_PASSWORD secrets (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
           printf '%s' "$KEYSTORE" | base64 --decode > "$RUNNER_TEMP/signing.jks"
           export CLIPPER_STORE_FILE="$RUNNER_TEMP/signing.jks" CLIPPER_KEY_PASSWORD="$KEY_PASSWORD" CLIPPER_KEY_ALIAS=ethereal
           gradle :app:assembleRelease --stacktrace \
