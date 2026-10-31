@@ -49,7 +49,7 @@ object PrismTvBackup {
         }
         return JSONObject()
             .put("prismBackup", 1)
-            .put("state", JSONObject().put("activeId", state.optString("activeId", "")).put("looks", bare).put("fonts", fonts).put("profileLooks", JSONObject()))
+            .put("state", JSONObject().put("activeId", state.optString("activeId", "")).put("looks", bare).put("fonts", fonts).put("profileLooks", state.optJSONObject("profileLooks") ?: JSONObject()))
             .put("avatars", avatars)
             .put("avatarPhotos", photos)
             .put("media", media)
@@ -83,7 +83,7 @@ object PrismTvBackup {
         for (i in 0 until looks.length()) looks.optJSONObject(i)?.let { l -> clipsHere[l.optString("id")]?.let { l.put("clips", it) } }
         val active = state.optString("activeId", "").takeIf { id -> (0 until looks.length()).any { looks.optJSONObject(it)?.optString("id") == id } }
             ?: looks.optJSONObject(0)?.optString("id").orEmpty()
-        PrismTv.restoreState(context, JSONObject().put("activeId", active).put("looks", looks))
+        PrismTv.restoreState(context, JSONObject().put("activeId", active).put("looks", looks).put("profileLooks", state.optJSONObject("profileLooks") ?: JSONObject()))
         PrismTvAvatars.restore(using, keeping)
         return true
     }

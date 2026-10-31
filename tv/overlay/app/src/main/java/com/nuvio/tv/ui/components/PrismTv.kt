@@ -227,6 +227,13 @@ object PrismTv {
         PrismTvSync.startAuto(context)
         look = activeJson(context)?.let { runCatching { PrismTvLook.parse(it) }.getOrNull() }
         PrismTvAvatars.url(null)
+        // The seasonal or profile look, at start and whenever the profile changes.
+        scope.launch {
+            runCatching {
+                dagger.hilt.android.EntryPointAccessors.fromApplication(context.applicationContext, PrismTvEntryPoint::class.java)
+                    .profileManager().activeProfileId.collect { id -> runCatching { autoSwitch(context.applicationContext, id) } }
+            }
+        }
     }
 
     fun soundsEnabled(context: Context): Boolean =
@@ -318,6 +325,63 @@ object PrismTv {
         val o = (base ?: JSONObject()).put("id", newId()).put("name", name)
         o.remove("fromPhone")
         saveLook(context, o)
+    }
+
+    // ---- Which look opens: by date (seasonal), then by profile, as on the phone ----
+
+    /** The look ids each profile opens in ("p<number>" to look id). */
+    fun profileLooks(context: Context): Map<String, String> {
+        val o = readState(context).optJSONObject("profileLooks") ?: return emptyMap()
+        return o.keys().asSequence().associateWith { o.optString(it) }.filterValues { it.isNotBlank() }
+    }
+
+    /** Turns this look on for a profile (or off, if it already is). */
+    fun toggleProfileLook(context: Context, profileId: Int, lookId: String) {
+        val state = readState(context)
+        val o = state.optJSONObject("profileLooks") ?: JSONObject().also { state.put("profileLooks", it) }
+        val key = "p$profileId"
+        if (o.optString(key) == lookId) o.remove(key) else o.put(key, lookId)
+        writeState(context, state)
+    }
+
+    /** A look's dates as (from month, from day, to month, to day), or null. */
+    fun season(context: Context, lookId: String): IntArray? {
+        val all = readState(context).optJSONArray("looks") ?: return null
+        for (i in 0 until all.length()) all.optJSONObject(i)?.takeIf { it.optString("id") == lookId }?.optJSONObject("season")?.let { s ->
+            return intArrayOf(s.optInt("fromMonth"), s.optInt("fromDay"), s.optInt("toMonth"), s.optInt("toDay"))
+        }
+        return null
+    }
+
+    fun setSeason(context: Context, lookId: String, dates: IntArray?) {
+        val state = readState(context)
+        val all = state.optJSONArray("looks") ?: return
+        for (i in 0 until all.length()) all.optJSONObject(i)?.takeIf { it.optString("id") == lookId }?.let { l ->
+            if (dates == null) l.remove("season")
+            else l.put("season", JSONObject().put("fromMonth", dates[0]).put("fromDay", dates[1]).put("toMonth", dates[2]).put("toDay", dates[3]))
+        }
+        writeState(context, state)
+    }
+
+    private fun inSeason(s: JSONObject, month: Int, day: Int): Boolean {
+        val today = month * 100 + day
+        val from = s.optInt("fromMonth") * 100 + s.optInt("fromDay")
+        val to = s.optInt("toMonth") * 100 + s.optInt("toDay")
+        return if (from <= to) today in from..to else today >= from || today <= to
+    }
+
+    /** Switches to today's seasonal look or the profile's look, if one is set and it isn't showing. */
+    fun autoSwitch(context: Context, profileId: Int?) {
+        val state = readState(context)
+        val all = state.optJSONArray("looks") ?: return
+        val cal = java.util.Calendar.getInstance()
+        val month = cal.get(java.util.Calendar.MONTH) + 1
+        val day = cal.get(java.util.Calendar.DAY_OF_MONTH)
+        val ids = (0 until all.length()).mapNotNull { all.optJSONObject(it) }
+        val id = ids.firstOrNull { l -> l.optJSONObject("season")?.let { inSeason(it, month, day) } == true }?.optString("id")
+            ?: profileId?.let { state.optJSONObject("profileLooks")?.optString("p$it") }?.takeIf { p -> ids.any { it.optString("id") == p } }
+            ?: return
+        if (id != state.optString("activeId", "")) switchTo(context, id)
     }
 
     fun renameLook(context: Context, id: String, name: String) {

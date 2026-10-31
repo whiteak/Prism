@@ -311,6 +311,44 @@ private fun PrismTvCustomiseScreen(onClose: () -> Unit) {
 
 // ---- 1. Looks ----
 
+/** Picks the profiles a look opens for, one at a time (each press turns one on or off). */
+private fun prismProfilesFor(context: Context, lookId: String, lookName: String) {
+    val profiles = dagger.hilt.android.EntryPointAccessors.fromApplication(context.applicationContext, com.nuvio.tv.ui.components.PrismTvEntryPoint::class.java)
+        .profileManager().profiles.value
+    if (profiles.isEmpty()) {
+        Toast.makeText(context, "No profiles yet", Toast.LENGTH_LONG).show()
+        return
+    }
+    val on = PrismTv.profileLooks(context)
+    prismChoose(context, "\"$lookName\" opens for…", profiles.map { p -> (if (on["p${p.id}"] == lookId) "✓ " else "") + p.name }) { i ->
+        PrismTv.toggleProfileLook(context, profiles[i].id, lookId)
+        PrismTv.autoSwitch(context, null)
+        prismProfilesFor(context, lookId, lookName)
+    }
+}
+
+/** Sets the dates a look opens between each year, like 1/12 to 26/12 for Christmas. */
+private fun prismDatesFor(context: Context, lookId: String, lookName: String) {
+    val now = PrismTv.season(context, lookId)
+    val current = now?.let { "${it[1]}/${it[0]} to ${it[3]}/${it[2]}" } ?: "1/12 to 26/12"
+    prismAsk(context, "\"$lookName\" opens between (day/month to day/month, or none)", current) { text ->
+        if (text.lowercase() in setOf("none", "never", "off", "no")) {
+            PrismTv.setSeason(context, lookId, null)
+            Toast.makeText(context, "No dates", Toast.LENGTH_SHORT).show()
+            return@prismAsk
+        }
+        val n = Regex("""\d+""").findAll(text).map { it.value.toInt() }.toList()
+        val ok = n.size == 4 && n[1] in 1..12 && n[3] in 1..12 && n[0] in 1..31 && n[2] in 1..31
+        if (!ok) {
+            Toast.makeText(context, "Type it like 1/12 to 26/12", Toast.LENGTH_LONG).show()
+            return@prismAsk
+        }
+        PrismTv.setSeason(context, lookId, intArrayOf(n[1], n[0], n[3], n[2]))
+        PrismTv.autoSwitch(context, null)
+        Toast.makeText(context, "Opens ${n[0]}/${n[1]} to ${n[2]}/${n[3]} each year", Toast.LENGTH_LONG).show()
+    }
+}
+
 @Composable
 private fun PrismTvLooksPage(context: Context, toast: (String) -> Unit) {
     val looks = remember(PrismTv.changes) { PrismTv.looks(context) }
@@ -320,13 +358,19 @@ private fun PrismTvLooksPage(context: Context, toast: (String) -> Unit) {
             item(id) {
                 SettingsActionRow(
                     title = name,
-                    subtitle = if (id == active) "Showing now. Press to rename or delete" else "Press to show it, rename it or delete it",
+                    subtitle = listOfNotNull(
+                        if (id == active) "Showing now" else "Press to show it, set when it opens, rename or delete it",
+                        PrismTv.season(context, id)?.let { d -> "Opens ${d[1]}/${d[0]} to ${d[3]}/${d[2]}" },
+                        PrismTv.profileLooks(context).count { it.value == id }.takeIf { it > 0 }?.let { "Opens for $it profile${if (it == 1) "" else "s"}" },
+                    ).joinToString(" · "),
                     value = if (id == active) "Showing" else null,
                     onClick = {
-                        val options = listOfNotNull(if (id != active) "Show this look" else null, "Rename", "Delete")
+                        val options = listOfNotNull(if (id != active) "Show this look" else null, "Opens for these profiles", "Opens between dates", "Rename", "Delete")
                         prismChoose(context, name, options) { i ->
                             when (options[i]) {
                                 "Show this look" -> PrismTv.switchTo(context, id)
+                                "Opens for these profiles" -> prismProfilesFor(context, id, name)
+                                "Opens between dates" -> prismDatesFor(context, id, name)
                                 "Rename" -> prismAsk(context, "New name", name) { PrismTv.renameLook(context, id, it) }
                                 "Delete" -> prismConfirm(context, "Delete \"$name\"?", "Its pictures and sounds go too.") { PrismTv.deleteLook(context, id) }
                             }
