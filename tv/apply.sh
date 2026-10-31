@@ -148,6 +148,18 @@ nav=app/src/main/java/com/nuvio/tv/ui/navigation/NuvioNavHost.kt
 perl -0pi -e 's/(\n(\s*)HomeScreen\(\n\s*onNavigateToDetail = \{ itemId, itemType, addonBaseUrl ->\n)/$1$2        if (com.nuvio.tv.ui.components.PrismTvRandom.handled(context, addonBaseUrl, itemId) { navController.navigate(it) }) return\@HomeScreen\n/' "$nav"
 grep -q 'PrismTvRandom.handled(context, addonBaseUrl, itemId)' "$nav"
 
+# More sound moments, as on the phone: play pressed, finished watching, added to and removed from Library.
+tvplayer=app/src/main/java/com/nuvio/tv/ui/screens/player/PlayerScreen.kt
+perl -0pi -e 's/(\n(\s*)val uiState by viewModel\.uiState\.collectAsState\(\)\n)/$1$2androidx.compose.runtime.LaunchedEffect(Unit) { com.nuvio.tv.ui.components.PrismTvSounds.playApp("PlayStarting") }\n$2androidx.compose.runtime.LaunchedEffect(uiState.playbackEnded) { if (uiState.playbackEnded) com.nuvio.tv.ui.components.PrismTvSounds.playApp("EpisodeFinished") }\n/' "$tvplayer"
+grep -q 'playApp("PlayStarting")' "$tvplayer"; grep -q 'playApp("EpisodeFinished")' "$tvplayer"
+details=app/src/main/java/com/nuvio/tv/ui/screens/detail/MetaDetailsViewModel.kt
+perl -0pi -e 's/(\n(\s*)pendingDefaultLibraryToggle = null\n(\s*)_uiState\.update \{ it\.copy\(defaultLibraryTogglePending = false\) \}\n)/$1$2com.nuvio.tv.ui.components.PrismTvSounds.playApp(if (wasInLibrary || wasInWatchlist) "Removed" else "AddedToLibrary")\n/' "$details"
+grep -q 'playApp(if (wasInLibrary || wasInWatchlist) "Removed" else "AddedToLibrary")' "$details"
+posteropt=app/src/main/java/com/nuvio/tv/ui/components/posteroptions/PosterOptionsController.kt
+perl -0pi -e 's/(\n(\s*)libraryRepository\.toggleDefault\(\n\s*canonical\.toLibraryEntryInput\(state\.addonBaseUrl\.takeIf \{ it\.isNotBlank\(\) \}\)\n\s*\)\n)/$1$2PrismTvSounds.playApp(if (state.isInLibrary) "Removed" else "AddedToLibrary")\n/' "$posteropt"
+sed -i 's/^\(\s*\)PrismTvSounds.playApp(if (state.isInLibrary)/\1com.nuvio.tv.ui.components.PrismTvSounds.playApp(if (state.isInLibrary)/' "$posteropt"
+grep -q 'playApp(if (state.isInLibrary) "Removed" else "AddedToLibrary")' "$posteropt"
+
 # The look's fonts (headings and everyday text) and text size.
 tt=app/src/main/java/com/nuvio/tv/ui/theme/Theme.kt
 perl -0pi -e 's/val typography = buildNuvioTypography\(getFontFamily\(appFont\)\)/val typography = com.nuvio.tv.ui.components.prismTvTypography(getFontFamily(appFont)) { buildNuvioTypography(it) }/; s/(typography = typography,\n\s*)content = content/${1}content = { com.nuvio.tv.ui.components.PrismTvTextSize(content) }/' "$tt"

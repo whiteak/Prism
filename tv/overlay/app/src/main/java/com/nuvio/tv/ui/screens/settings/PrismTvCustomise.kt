@@ -115,6 +115,10 @@ private val MOMENTS = listOf(
     "PickEpisode" to "Play random episode",
     "NoResults" to "Nothing found",
     "StreamFailed" to "Can't play",
+    "PlayStarting" to "Play pressed",
+    "EpisodeFinished" to "Finished watching",
+    "AddedToLibrary" to "Added to Library",
+    "Removed" to "Removed from Library",
 )
 
 private sealed class Sub {

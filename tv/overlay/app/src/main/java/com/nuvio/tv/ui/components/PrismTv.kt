@@ -429,6 +429,8 @@ object PrismTv {
 
     fun mediaDir(context: Context) = File(dir(context), "media").apply { mkdirs() }
 
+    internal fun app(): Context? = appContext
+
     /** Prism's folder on this TV, once the app has started. */
     fun folder(): File? = appContext?.let { dir(it) }
 
@@ -576,6 +578,12 @@ object PrismTvSounds {
     private var player: MediaPlayer? = null
     private val last = mutableMapOf<String, String>()
     private val main = Handler(Looper.getMainLooper())
+
+    /** For places without a screen to hand (view models): plays with the app's context, once Prism has started. */
+    fun playApp(base: String) {
+        PrismTv.folder() ?: return
+        PrismTv.app()?.let { play(it, base) }
+    }
 
     fun play(context: Context, base: String, then: () -> Unit = {}) {
         val l = PrismTv.look
