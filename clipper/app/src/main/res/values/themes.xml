@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Clipper" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/clipper_bg</item>
+        <item name="android:statusBarColor">@color/clipper_bg</item>
+        <item name="android:navigationBarColor">@color/clipper_bg</item>
+    </style>
+    <color name="clipper_bg">#120E1C</color>
+</resources>

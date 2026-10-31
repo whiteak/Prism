@@ -1,0 +1,58 @@
+name: Clipper
+
+# Builds the Clipper phone app (clipper/) and publishes it as a "clipper-N" release, never marked as the
+# latest release. Prism's updaters only take releases holding a Prism APK, so they ignore these. Only builds
+# when dispatched, or on a push whose commit message contains [clipper]. Build numbers carry on from the old
+# private repo (N = run number + 100), so the installed app takes each new build as an update.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "clipper/**"
+      - ".github/workflows/clipper.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  phone:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[clipper]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Build signed APK
+        working-directory: clipper
+        env:
+          KEYSTORE: ${{ secrets.SIGNING_KEYSTORE }}
+          KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          n=$((GITHUB_RUN_NUMBER + 100))
+          printf '%s' "$KEYSTORE" | base64 --decode > "$RUNNER_TEMP/signing.jks"
+          export CLIPPER_STORE_FILE="$RUNNER_TEMP/signing.jks" CLIPPER_KEY_PASSWORD="$KEY_PASSWORD" CLIPPER_KEY_ALIAS=ethereal
+          gradle :app:assembleRelease --stacktrace \
+            -Pclipper.versionCode="$n" -Pclipper.versionName="1.0.$n"
+          mkdir -p ../files
+          cp app/build/outputs/apk/release/app-release.apk "../files/Clipper-1.0.$n.apk"
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          n=$((GITHUB_RUN_NUMBER + 100))
+          gh release create "clipper-$n" files/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --latest=false \
+            --title "Clipper $(date -u +%Y-%m-%d) (#$n)" \
+            --notes "Clipper phone app: trims your videos into H.265 clips or sound bites."
+          # Keep only the newest 3 Clipper releases.
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq '.[].tagName' \
+            | grep '^clipper-' | tail -n +4 | while read -r tag; do
+              gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+            done
