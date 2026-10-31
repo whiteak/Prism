@@ -13,9 +13,9 @@ gradle=composeApp/build.gradle.kts
 perl -0pi -e 's/(\n(\s*)perUserInstall = false\n)/$1$2iconFile.set(project.file("desktop-icon.ico"))\n/' "$gradle"
 grep -q 'iconFile.set(project.file("desktop-icon.ico"))' "$gradle"
 main=composeApp/src/desktopMain/kotlin/com/nuvio/app/main.kt
-perl -0pi -e 's/(\n(\s*)title = DesktopPaths\.appName,\n)/$1$2icon = com.nuvio.app.prism.PrismDesktop.windowIcon(),\n/' "$main"
+perl -0pi -e 's/(\n(\s*)title = DesktopPaths\.appName,\n)/$1$2icon = com.nuvio.app.features.settings.desktopWindowIcon(),\n/' "$main"
 perl -0pi -e 's/\n(\s*)runApp\(\)\n/\n$1com.nuvio.app.prism.PrismDesktop.install()\n$1runApp()\n/' "$main"
-grep -q 'PrismDesktop.windowIcon(),' "$main"
+grep -q 'desktopWindowIcon(),' "$main"
 grep -q 'PrismDesktop.install()' "$main"
 perl -0pi -e 's/onCloseRequest = ::exitApplication,/onCloseRequest = { com.nuvio.app.prism.PrismDesktop.closing(::exitApplication) },/' "$main"
 grep -q 'PrismDesktop.closing(::exitApplication)' "$main"

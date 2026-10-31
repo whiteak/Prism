@@ -190,6 +190,10 @@ object PrismDesktop : PrismPlatform {
 
     override suspend fun deleteOriginal(ref: String): Boolean = withContext(Dispatchers.IO) { runCatching { File(ref).delete() }.getOrDefault(false) }
 
+    override val canMakeClips: Boolean get() = PrismDesktopClipMaker.available
+
+    override suspend fun makeClip(sound: Boolean): PrismMadeClip? = PrismDesktopClipMaker.make(sound)
+
     override fun fileUrl(path: String): String = File(path).toPath().toUri().toString()
 
     @Composable
@@ -380,6 +384,31 @@ object PrismDesktop : PrismPlatform {
 
     override fun today(): Pair<Int, Int> = java.time.LocalDate.now().let { it.monthValue to it.dayOfMonth }
 
+    // The phone's built-in font styles, matched with fonts every Windows PC has, so a look made on the
+    // phone keeps its fonts here.
+    private val windowsFamilies = listOf(
+        Triple("casual", "Casual", "comic.ttf"),
+        Triple("sans-serif-condensed", "Condensed", "ARIALN.TTF"),
+        Triple("sans-serif-light", "Light", "segoeuil.ttf"),
+        Triple("sans-serif-thin", "Thin", "segoeuisl.ttf"),
+        Triple("sans-serif-medium", "Medium", "seguisb.ttf"),
+        Triple("sans-serif-black", "Black", "ariblk.ttf"),
+        Triple("sans-serif-smallcaps", "Small caps", "COPRGTL.TTF"),
+        Triple("serif-monospace", "Old typewriter", "cour.ttf"),
+    )
+
+    private fun windowsFont(file: String): File? {
+        val dir = System.getenv("WINDIR")?.let { File(it, "Fonts") } ?: File("C:\\Windows\\Fonts")
+        return File(dir, file).takeIf { it.isFile } ?: dir.listFiles()?.firstOrNull { it.name.equals(file, ignoreCase = true) }
+    }
+
+    override val systemFamilies: List<Pair<String, String>> by lazy {
+        windowsFamilies.filter { windowsFont(it.third) != null }.map { it.first to it.second }
+    }
+
+    override fun systemFamily(name: String): androidx.compose.ui.text.font.FontFamily? =
+        windowsFamilies.firstOrNull { it.first == name }?.let { windowsFont(it.third) }?.let { loadFont(it.absolutePath) }
+
     override suspend fun deviceFonts(): List<PrismFolderFile> = withContext(Dispatchers.IO) {
         // Fonts installed for everyone, then the ones installed just for this user.
         val folders = listOfNotNull(
@@ -404,7 +433,7 @@ object PrismDesktop : PrismPlatform {
 
 
 /** Takes clip frames from libVLC's thread and hands the newest one to Compose (like the built-in player). */
-private class PrismFrameSink : BufferFormatCallback, RenderCallback {
+internal class PrismFrameSink : BufferFormatCallback, RenderCallback {
     private val lock = Any()
     private var width = 0
     private var height = 0
