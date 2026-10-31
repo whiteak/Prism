@@ -123,7 +123,7 @@ internal fun PrismTvLivePreview(mode: PrismTvPreviewMode, modifier: Modifier = M
 }
 
 @Composable
-private fun HomePreview(look: PrismTvLook?) {
+private fun androidx.compose.foundation.layout.BoxScope.HomePreview(look: PrismTvLook?) {
     val background = rememberPreviewPicture(look?.background, logo = false)
     val logo = rememberPreviewPicture(look?.logo, logo = true)
     background?.let {
@@ -164,7 +164,7 @@ private fun HomePreview(look: PrismTvLook?) {
 }
 
 @Composable
-private fun OpeningPreview(look: PrismTvLook?) {
+private fun androidx.compose.foundation.layout.BoxScope.OpeningPreview(look: PrismTvLook?) {
     val opening = rememberPreviewPicture(look?.opening, logo = false)
     val logo = rememberPreviewPicture(look?.logo, logo = true)
     opening?.let { Image(it, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
@@ -184,7 +184,7 @@ private fun OpeningPreview(look: PrismTvLook?) {
 }
 
 @Composable
-private fun PicturePreview() {
+private fun androidx.compose.foundation.layout.BoxScope.PicturePreview() {
     val picture = PrismTvPreviewState.picture
     val logo = PrismTvPreviewState.pictureIsLogo
     val image = rememberPreviewPicture(picture, logo)
@@ -202,7 +202,7 @@ private fun PicturePreview() {
 }
 
 @Composable
-private fun ProfilesPreview() {
+private fun androidx.compose.foundation.layout.BoxScope.ProfilesPreview() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val profiles by androidx.compose.runtime.remember {
         dagger.hilt.android.EntryPointAccessors.fromApplication(context.applicationContext, com.nuvio.tv.ui.components.PrismTvEntryPoint::class.java)
