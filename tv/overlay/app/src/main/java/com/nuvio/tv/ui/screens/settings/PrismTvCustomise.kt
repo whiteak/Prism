@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -91,6 +92,7 @@ private enum class Step(val title: String, val about: String) {
     Looks("Looks", "Keep several looks and switch between them"),
     Colours("Colours", "The colour theme, your own colour, pure black"),
     Pictures("Pictures and logos", "Home backgrounds, opening pictures and logos, cropped for the TV"),
+    Profiles("Profile photos", "A photo of your own for each profile, kept on this TV"),
     Fonts("Fonts", "Heading and everyday fonts, each kind of text styled, and how big text is"),
     Posters("Posters and shapes", "Poster size, rounded corners, names under posters"),
     Home("Home", "Your own rows of movies and shows, and show cards for Play random episode"),
@@ -262,11 +264,12 @@ private fun PrismTvCustomiseScreen(onClose: () -> Unit) {
                                 SettingsActionRow(title = "Logos", subtitle = "Under 3. Pictures and logos", value = "${PrismTvMedia.pictures(look, Slot.Logo).size}", onClick = { sub = Sub.Pictures(Slot.Logo) })
                             }
                             item("sound") {
-                                SettingsActionRow(title = "Opening sound", subtitle = "Under 9. Sounds", onClick = { sub = Sub.Moment("Opening", MOMENTS.first().second) })
+                                SettingsActionRow(title = "Opening sound", subtitle = "Under ${Step.Sounds.ordinal + 1}. Sounds", onClick = { sub = Sub.Moment("Opening", MOMENTS.first().second) })
                             }
                         }
                         step == Step.Fonts -> PrismTvFontsPage(look, ::edit, ::pick, ::toast, openArea = { a, l -> sub = Sub.TextArea(a, l) })
                         step == Step.Posters -> PrismTvPostersPage(context, look, ::edit)
+                        step == Step.Profiles -> PrismTvProfilesPage(::pick, ::toast)
                         step == Step.Home -> PrismTvHomePage(look, ::edit, openRow = { sub = Sub.Row(it) }, openCards = { sub = Sub.Cards })
                         step == Step.Quotes -> PrismTvQuotesPage(context, look, ::edit)
                         step == Step.Sounds -> LazyColumn {
@@ -817,6 +820,49 @@ private fun PrismTvPostersPage(context: Context, look: JSONObject, edit: ((JSONO
         if (p != null) {
             item("reset") {
                 SettingsActionRow(title = "Use the TV's own settings", subtitle = "This look stops setting posters", onClick = { edit { it.remove("tvPoster") } })
+            }
+        }
+    }
+}
+
+// ---- Profile photos ----
+
+@Composable
+private fun PrismTvProfilesPage(pick: (String, String, (String) -> Unit) -> Unit, toast: (String) -> Unit) {
+    val context = LocalContext.current
+    val profiles by remember {
+        dagger.hilt.android.EntryPointAccessors.fromApplication(context.applicationContext, com.nuvio.tv.ui.components.PrismTvEntryPoint::class.java)
+            .profileManager().profiles
+    }.collectAsState()
+    val avatars = com.nuvio.tv.ui.components.PrismTvAvatars
+    LazyColumn {
+        if (profiles.isEmpty()) item("none") { SettingsActionRow(title = "No profiles yet", subtitle = "Add a profile first, then give it a photo", onClick = {}) }
+        profiles.forEach { p ->
+            item("p${p.id}") {
+                val photos = avatars.photos(p.id)
+                SettingsActionRow(
+                    title = p.name,
+                    subtitle = if (photos.size > 1) "${photos.size} photos kept" else null,
+                    value = if (avatars.inUse(p.id) != null) "Own photo" else "Account picture",
+                    onClick = {
+                        val options = buildList {
+                            add("Pick a new photo")
+                            if (photos.size > 1 || (photos.size == 1 && avatars.inUse(p.id) == null)) add("Use a kept photo")
+                            if (avatars.inUse(p.id) != null) add("Back to the account picture")
+                            if (photos.isNotEmpty()) add("Delete a kept photo")
+                        }
+                        prismChoose(context, p.name, options) { which ->
+                            when (options[which]) {
+                                "Pick a new photo" -> pick("image/*", "picture") { name -> avatars.add(p.id, name); toast("${p.name} has a new photo") }
+                                "Use a kept photo" -> prismChoose(context, "Use which photo?", photos.mapIndexed { i, f -> "Photo ${i + 1}" + if (f == avatars.inUse(p.id)) " (in use)" else "" }) { avatars.use(p.id, photos[it]) }
+                                "Back to the account picture" -> avatars.use(p.id, null)
+                                "Delete a kept photo" -> prismChoose(context, "Delete which photo?", photos.mapIndexed { i, f -> "Photo ${i + 1}" + if (f == avatars.inUse(p.id)) " (in use)" else "" }) { i ->
+                                    prismConfirm(context, "Delete photo ${i + 1}?", "It goes from this TV.") { avatars.forget(p.id, photos[i]) }
+                                }
+                            }
+                        }
+                    },
+                )
             }
         }
     }

@@ -126,6 +126,20 @@ perl -0pi -e 's/\n    init \{\n/\n    init {\n        com.nuvio.tv.ui.components
 perl -0pi -e 's/val \(orderedKeys, catalogSnapshot\) = snapshotCatalogState\(\)/val (orderedKeys, catalogSnapshot) = com.nuvio.tv.ui.components.PrismTvRows.inject(snapshotCatalogState())/' "$hpipe"
 [ "$(grep -c 'PrismTvRows.start(viewModelScope)' "$hvm")" = 1 ]
 grep -q 'PrismTvRows.inject(snapshotCatalogState())' "$hpipe"
+# Sort on every catalog's "see all" page, remembered per catalog, as on the phone.
+seeall=app/src/main/java/com/nuvio/tv/ui/screens/CatalogSeeAllScreen.kt
+perl -0pi -e 's/(\n\s*val catalogRow = when \{\n\s*serverCatalog != null -> serverRow\?\.value\n\s*isSearchMode -> searchCatalogRow\n\s*else -> homeCatalogRow\n\s*\})/$1.let { com.nuvio.tv.ui.components.PrismTvCatalogSort.apply(catalogKey, it) }/' "$seeall"
+perl -0pi -e 's/(\n(\s*)val gridState = rememberLazyGridState\(\)\n)/$1$2com.nuvio.tv.ui.components.PrismTvCatalogSort.Effect(catalogKey, gridState)\n/' "$seeall"
+perl -0pi -e 's/(\n(\s*)text = catalogRow\?\.catalogName \?: stringResource\(R\.string\.catalog_see_all_title_fallback\),\n\s*style = MaterialTheme\.typography\.headlineLarge,\n\s*color = NuvioTheme\.colors\.TextPrimary\n\s*\)\n)/$1            Spacer(modifier = Modifier.weight(1f))\n            com.nuvio.tv.ui.components.PrismTvCatalogSort.SortButton(catalogKey)\n/' "$seeall"
+grep -q 'PrismTvCatalogSort.apply(catalogKey, it)' "$seeall"; grep -q 'PrismTvCatalogSort.Effect(catalogKey, gridState)' "$seeall"; grep -q 'PrismTvCatalogSort.SortButton(catalogKey)' "$seeall"
+
+# Profile photos chosen in Customise win over the account's avatar (profile picker, side menu, top bar).
+psel=app/src/main/java/com/nuvio/tv/ui/screens/profile/ProfileSelectionScreen.kt
+perl -0pi -e 's/(\n\s*profile = profile,\n\s*avatarImageUrl = )(profile\.avatarUrl\?\.takeIf \{ it\.isNotBlank\(\) \})/$1com.nuvio.tv.ui.components.PrismTvAvatars.url(profile.id)\n                            ?: $2/' "$psel"
+grep -q 'PrismTvAvatars.url(profile.id)' "$psel"
+perl -0pi -e 's/val activeProfileAvatarImageUrl = remember\(activeProfile, avatarCatalog\) \{/val activeProfileAvatarImageUrl = com.nuvio.tv.ui.components.PrismTvAvatars.url(activeProfile?.id) ?: remember(activeProfile, avatarCatalog) {/' "$main"
+grep -q 'PrismTvAvatars.url(activeProfile?.id)' "$main"
+
 # The look's fonts (headings and everyday text) and text size.
 tt=app/src/main/java/com/nuvio/tv/ui/theme/Theme.kt
 perl -0pi -e 's/val typography = buildNuvioTypography\(getFontFamily\(appFont\)\)/val typography = com.nuvio.tv.ui.components.prismTvTypography(getFontFamily(appFont)) { buildNuvioTypography(it) }/; s/(typography = typography,\n\s*)content = content/${1}content = { com.nuvio.tv.ui.components.PrismTvTextSize(content) }/' "$tt"

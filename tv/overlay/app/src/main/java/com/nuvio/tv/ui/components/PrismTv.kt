@@ -219,6 +219,7 @@ object PrismTv {
         appContext = context.applicationContext
         PrismTvSync.startAuto(context)
         look = activeJson(context)?.let { runCatching { PrismTvLook.parse(it) }.getOrNull() }
+        PrismTvAvatars.url(null)
     }
 
     fun soundsEnabled(context: Context): Boolean =
@@ -356,6 +357,9 @@ object PrismTv {
     }
 
     fun mediaDir(context: Context) = File(dir(context), "media").apply { mkdirs() }
+
+    /** Prism's folder on this TV, once the app has started. */
+    fun folder(): File? = appContext?.let { dir(it) }
 
     /** Goes back to Prism's built-in opening and no sounds (the TV's looks are kept, to switch back to). */
     fun clear(context: Context) {
