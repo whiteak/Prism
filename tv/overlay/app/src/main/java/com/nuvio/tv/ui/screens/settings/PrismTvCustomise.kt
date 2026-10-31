@@ -5,15 +5,62 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.tv.material3.Text
+import com.nuvio.tv.domain.model.AppTheme
 import com.nuvio.tv.ui.components.PrismTv
+import com.nuvio.tv.ui.components.PrismTvCrop
+import com.nuvio.tv.ui.components.PrismTvImages
+import com.nuvio.tv.ui.components.PrismTvPicture
+import com.nuvio.tv.ui.components.PrismTvSound
+import com.nuvio.tv.ui.components.PrismTvSounds
+import com.nuvio.tv.ui.theme.NuvioTheme
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -21,29 +68,84 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-// Prism: customise this TV on its own (Settings > Appearance), separate from the phone and the PC: pictures,
-// quotes, sounds, fonts and sizes, saved in the TV's own look. Colours are the TV's theme picker above.
+// Prism: Customise on the TV, the same steps as on the phone, done with the remote (Settings > Appearance >
+// Customise). Each TV look is kept on this TV (PrismTv: looks.json plus the media folder); copying from the phone
+// adds the phone's look as one more.
+
 @Composable
 internal fun PrismTvCustomise() {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     PrismTv.init(context)
-    // Bumped after each change so the rows show the new values.
-    var changes by remember { mutableIntStateOf(0) }
-    val o = remember(changes) { PrismTv.lookJson(context) ?: JSONObject().put("name", "This TV") }
+    var open by remember { mutableStateOf(false) }
+    SettingsActionRow(
+        title = "Customise",
+        subtitle = "This TV's own looks: colours, pictures, opening, quotes and sounds, set up with the remote",
+        value = PrismTv.look?.name ?: "Built-in",
+        onClick = { open = true },
+    )
+    if (open) PrismTvCustomiseScreen(onClose = { open = false })
+}
+
+/** The steps, numbered in the order a look is usually set up. */
+private enum class Step(val title: String, val about: String) {
+    Looks("Looks", "Keep several looks and switch between them"),
+    Colours("Colours", "The colour theme, your own colour, pure black"),
+    Pictures("Pictures and logos", "Home backgrounds, opening pictures and logos, cropped for the TV"),
+    Fonts("Fonts", "Heading and everyday fonts, and how big text is"),
+    Opening("Opening", "How long the opening shows"),
+    Quotes("Quotes", "One shows on the opening each time Prism starts"),
+    Sounds("Sounds", "Sounds for moments in the app, trimmed and at their own volume"),
+}
+
+/** The picture slots: the look's list of pictures, the older single one, and the slot's name for pictureChoice. */
+internal enum class Slot(val list: String, val single: String, val label: String, val crops: Boolean) {
+    Background("backgrounds", "background", "Home background", true),
+    Opening("openings", "opening", "Opening picture", true),
+    Logo("logos", "logo", "Logo", false),
+}
+
+private val MOMENTS = listOf(
+    "Opening" to "Opening (when Prism starts)",
+    "Profile" to "Profile picked",
+    "PickEpisode" to "Play random episode",
+    "NoResults" to "Nothing found",
+    "StreamFailed" to "Can't play",
+)
+
+private sealed class Sub {
+    class Pictures(val slot: Slot) : Sub()
+    class Crop(val slot: Slot, val file: String) : Sub()
+    class Moment(val key: String, val label: String) : Sub()
+    class Trim(val moment: String, val key: String) : Sub()
+}
+
+@Composable
+private fun PrismTvCustomiseScreen(onClose: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var step by remember { mutableStateOf<Step?>(null) }
+    var sub by remember { mutableStateOf<Sub?>(null) }
+    val o = remember(PrismTv.changes) { PrismTv.lookJson(context) }
+    val look = o ?: JSONObject()
 
     fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_LONG).show()
-    fun save(edit: (JSONObject) -> Unit) {
+    fun edit(change: (JSONObject) -> Unit) {
         val next = PrismTv.lookJson(context) ?: JSONObject().put("name", "This TV")
-        edit(next)
-        runCatching { PrismTv.saveLook(context, next) }
-            .onSuccess { changes++ }
-            .onFailure { toast("That couldn't be saved") }
+        change(next)
+        runCatching { PrismTv.saveLook(context, next) }.onFailure { toast("That couldn't be saved") }
+    }
+    fun back() {
+        when {
+            sub is Sub.Crop -> sub = Sub.Pictures((sub as Sub.Crop).slot)
+            sub is Sub.Trim -> sub = MOMENTS.firstOrNull { it.first == (sub as Sub.Trim).moment }?.let { Sub.Moment(it.first, it.second) }
+            sub != null -> sub = null
+            step != null -> step = null
+            else -> onClose()
+        }
     }
 
-    // One picker for every kind of file; [pending] says what the picked file is for.
     var pending by remember { mutableStateOf<((String) -> Unit)?>(null) }
-    var pendingKind by remember { mutableStateOf("file") }
+    var pendingKind by remember { mutableStateOf("picture") }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         val then = pending ?: return@rememberLauncherForActivityResult
         pending = null
@@ -62,140 +164,428 @@ internal fun PrismTvCustomise() {
         }
     }
 
-    fun ask(title: String, start: String, then: (String) -> Unit) {
-        val box = android.widget.EditText(context).apply { setText(start) }
-        android.app.AlertDialog.Builder(context)
-            .setTitle(title)
-            .setView(box)
-            .setPositiveButton("Save") { _, _ -> box.text.toString().trim().takeIf { it.isNotEmpty() }?.let(then) }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-    fun <T> next(options: List<T>, current: T): T = options[(options.indexOf(current) + 1) % options.size]
-
-    SettingsActionRow(
-        title = "Customise this TV",
-        subtitle = "This TV's own look, separate from the phone and the PC. Colours are the theme choices above. " +
-            "Copying from the phone replaces it",
-        value = o.optString("name", "This TV"),
-        onClick = { ask("Name of this TV's look", o.optString("name", "This TV")) { name -> save { it.put("name", name) } } },
-    )
-
-    // Pictures: several of each can be added; one is picked at random each time Prism starts.
-    listOf(
-        Triple("backgrounds", "background", "Home background"),
-        Triple("openings", "opening", "Opening picture"),
-        Triple("logos", "logo", "Logo"),
-    ).forEach { (list, single, label) ->
-        val count = PrismTvMedia.pictures(o, list, single).size
-        SettingsActionRow(
-            title = "$label: add a picture",
-            subtitle = if (list == "logos") "Shown on the opening, best with a see-through background (PNG)"
-            else "Fills the TV's wide screen; with more than one, a different one each time Prism starts",
-            value = if (count == 0) "None" else "$count",
-            onClick = {
-                pick("image/*", "picture") { name ->
-                    save { look ->
-                        val array = look.optJSONArray(list) ?: JSONArray().also { look.put(list, it) }
-                        array.put(JSONObject().put("file", name))
-                        look.optJSONObject("pictureChoice")?.remove(single)
+    Dialog(
+        onDismissRequest = { back() },
+        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(NuvioTheme.colors.Background)
+                .padding(horizontal = 48.dp, vertical = 28.dp),
+        ) {
+            val current = sub
+            when {
+                current is Sub.Crop -> PrismTvCropEditor(look, current.slot, current.file, onDone = { crop ->
+                    edit { l -> PrismTvMedia.setCrop(l, current.slot, current.file, crop) }
+                    sub = Sub.Pictures(current.slot)
+                })
+                current is Sub.Trim -> PrismTvTrimEditor(look, current.key, onDone = { start, end ->
+                    edit { l -> l.optJSONObject("sounds")?.optJSONObject(current.key)?.put("startMs", start)?.put("endMs", end) }
+                    sub = MOMENTS.firstOrNull { it.first == current.moment }?.let { Sub.Moment(it.first, it.second) }
+                })
+                else -> Column(modifier = Modifier.fillMaxSize()) {
+                    val heading = when (current) {
+                        is Sub.Pictures -> current.slot.label + "s"
+                        is Sub.Moment -> "Sound: " + current.label
+                        else -> step?.let { "${it.ordinal + 1}. ${it.title}" } ?: "Customise"
                     }
-                    toast("Added. Restart Prism to see a new opening.")
+                    Text(heading, color = NuvioTheme.colors.TextPrimary, fontSize = 28.sp)
+                    Text(
+                        (o?.optString("name")?.let { "Look: $it" } ?: "Showing Prism's built-in look; any change starts a look of this TV's own") +
+                            "   ·   Back to go back",
+                        color = NuvioTheme.colors.TextSecondary,
+                        fontSize = 14.sp,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    when {
+                        current is Sub.Pictures -> PrismTvPicturesPage(look, current.slot, ::edit, ::pick, ::toast, openCrop = { sub = Sub.Crop(current.slot, it) })
+                        current is Sub.Moment -> PrismTvMomentPage(look, current.key, current.label, ::edit, ::pick, ::toast, openTrim = { sub = Sub.Trim(current.key, it) })
+                        step == null -> LazyColumn {
+                            Step.entries.forEach { s ->
+                                item(s.name) {
+                                    SettingsActionRow(title = "${s.ordinal + 1}. ${s.title}", subtitle = s.about, onClick = { step = s })
+                                }
+                            }
+                        }
+                        step == Step.Looks -> PrismTvLooksPage(context, ::toast)
+                        step == Step.Colours -> PrismTvColoursPage(context, look, ::edit)
+                        step == Step.Pictures -> LazyColumn {
+                            Slot.entries.forEach { slot ->
+                                item(slot.name) {
+                                    val count = PrismTvMedia.pictures(look, slot).size
+                                    SettingsActionRow(
+                                        title = slot.label + "s",
+                                        subtitle = if (slot.crops) "Add, crop, pick one or let one be picked at random each start" else "Shown on the opening; best with a see-through background (PNG)",
+                                        value = if (count == 0) "None" else "$count",
+                                        onClick = { sub = Sub.Pictures(slot) },
+                                    )
+                                }
+                            }
+                            item("dim") {
+                                val dims = listOf(0.0, 0.2, 0.35, 0.5, 0.7)
+                                val dim = dims.minBy { kotlin.math.abs(it - look.optDouble("backgroundDim", 0.35)) }
+                                SettingsActionRow(
+                                    title = "Darken the Home background",
+                                    subtitle = "So writing stays easy to read over the picture",
+                                    value = if (dim == 0.0) "Off" else "${(dim * 100).toInt()}%",
+                                    onClick = { edit { it.put("backgroundDim", dims[(dims.indexOf(dim) + 1) % dims.size]) } },
+                                )
+                            }
+                        }
+                        step == Step.Opening -> LazyColumn {
+                            item("secs") {
+                                val seconds = listOf(3, 5, 8, 10, 15)
+                                val secs = look.optInt("openingSeconds", 5).let { s -> seconds.minBy { kotlin.math.abs(it - s) } }
+                                SettingsActionRow(
+                                    title = "Opening shows for",
+                                    subtitle = "How long the opening picture stays when Prism starts (any key skips it)",
+                                    value = "$secs seconds",
+                                    onClick = { edit { it.put("openingSeconds", seconds[(seconds.indexOf(secs) + 1) % seconds.size]) } },
+                                )
+                            }
+                            item("pics") {
+                                SettingsActionRow(title = "Opening pictures", subtitle = "Under 3. Pictures and logos", value = "${PrismTvMedia.pictures(look, Slot.Opening).size}", onClick = { sub = Sub.Pictures(Slot.Opening) })
+                            }
+                            item("logos") {
+                                SettingsActionRow(title = "Logos", subtitle = "Under 3. Pictures and logos", value = "${PrismTvMedia.pictures(look, Slot.Logo).size}", onClick = { sub = Sub.Pictures(Slot.Logo) })
+                            }
+                            item("sound") {
+                                SettingsActionRow(title = "Opening sound", subtitle = "Under 7. Sounds", onClick = { sub = Sub.Moment("Opening", MOMENTS.first().second) })
+                            }
+                        }
+                        step == Step.Fonts -> PrismTvFontsPage(look, ::edit, ::pick, ::toast)
+                        step == Step.Quotes -> PrismTvQuotesPage(context, look, ::edit)
+                        step == Step.Sounds -> LazyColumn {
+                            item("on") {
+                                SettingsToggleRow(
+                                    title = "Sounds in this look",
+                                    subtitle = "Off keeps the sounds but doesn't play them",
+                                    checked = look.optBoolean("soundsOn", true),
+                                    onToggle = { edit { it.put("soundsOn", !look.optBoolean("soundsOn", true)) } },
+                                )
+                            }
+                            MOMENTS.forEach { (key, label) ->
+                                item(key) {
+                                    val n = PrismTvMedia.soundKeys(look, key).size
+                                    SettingsActionRow(title = label, subtitle = null, value = if (n == 0) "None" else "$n", onClick = { sub = Sub.Moment(key, label) })
+                                }
+                            }
+                        }
+                    }
                 }
-            },
-        )
-        if (count > 0) {
-            SettingsActionRow(
-                title = "$label: remove all",
-                subtitle = "Takes the ${label.lowercase()} pictures off this TV",
-                onClick = {
-                    val files = PrismTvMedia.pictures(o, list, single)
-                    save { look ->
-                        look.remove(list)
-                        look.remove(single)
-                        look.optJSONObject("pictureChoice")?.remove(single)
-                    }
-                    PrismTvMedia.forget(context, files)
-                },
-            )
-        }
-    }
-
-    val dims = listOf(0.0, 0.2, 0.35, 0.5, 0.7)
-    val dim = dims.minBy { kotlin.math.abs(it - o.optDouble("backgroundDim", 0.35)) }
-    SettingsActionRow(
-        title = "Darken the background",
-        subtitle = "So writing stays easy to read over the Home picture",
-        value = if (dim == 0.0) "Off" else "${(dim * 100).toInt()}%",
-        onClick = { save { it.put("backgroundDim", next(dims, dim)) } },
-    )
-    val seconds = listOf(3, 5, 8, 10)
-    val secs = o.optInt("openingSeconds", 5).let { s -> seconds.minBy { kotlin.math.abs(it - s) } }
-    SettingsActionRow(
-        title = "Opening shows for",
-        subtitle = "How long the opening picture stays when Prism starts",
-        value = "$secs seconds",
-        onClick = { save { it.put("openingSeconds", next(seconds, secs)) } },
-    )
-
-    val quotes = o.optJSONArray("quotes")?.length() ?: 0
-    SettingsActionRow(
-        title = "Quotes: add one",
-        subtitle = "One shows on the opening each time Prism starts",
-        value = if (quotes == 0) "None" else "$quotes",
-        onClick = {
-            ask("New quote", "") { quote ->
-                save { look -> (look.optJSONArray("quotes") ?: JSONArray().also { look.put("quotes", it) }).put(quote) }
             }
-        },
-    )
-    if (quotes > 0) {
-        SettingsActionRow(
-            title = "Quotes: remove all",
-            subtitle = "Takes this TV's quotes away",
-            onClick = { save { it.remove("quotes") } },
-        )
+        }
     }
+}
 
-    // Sounds by moment; adding more than one to a moment plays one of them at random.
-    PrismTvMedia.MOMENTS.forEach { (moment, label) ->
-        val keys = PrismTvMedia.soundKeys(o, moment)
-        SettingsActionRow(
-            title = "Sound: $label",
-            subtitle = if (keys.isEmpty()) "Press to add a sound (MP3, WAV, OGG)" else "Press to add another; one plays at random",
-            value = if (keys.isEmpty()) "None" else "${keys.size}",
-            onClick = {
-                pick("audio/*", "sound") { name ->
-                    save { look ->
-                        val sounds = look.optJSONObject("sounds") ?: JSONObject().also { look.put("sounds", it) }
-                        val key = if (sounds.has(moment)) "$moment#${System.currentTimeMillis()}" else moment
-                        sounds.put(key, JSONObject().put("file", name).put("enabled", true).put("volume", 1.0))
-                        look.optJSONObject("soundChoice")?.remove(moment)
-                    }
-                    toast("Added the sound for $label")
-                }
-            },
-        )
-        if (keys.isNotEmpty()) {
+// ---- 1. Looks ----
+
+@Composable
+private fun PrismTvLooksPage(context: Context, toast: (String) -> Unit) {
+    val looks = remember(PrismTv.changes) { PrismTv.looks(context) }
+    val active = remember(PrismTv.changes) { PrismTv.activeId(context) }
+    LazyColumn {
+        looks.forEach { (id, name) ->
+            item(id) {
+                SettingsActionRow(
+                    title = name,
+                    subtitle = if (id == active) "Showing now. Press to rename or delete" else "Press to show it, rename it or delete it",
+                    value = if (id == active) "Showing" else null,
+                    onClick = {
+                        val options = listOfNotNull(if (id != active) "Show this look" else null, "Rename", "Delete")
+                        prismChoose(context, name, options) { i ->
+                            when (options[i]) {
+                                "Show this look" -> PrismTv.switchTo(context, id)
+                                "Rename" -> prismAsk(context, "New name", name) { PrismTv.renameLook(context, id, it) }
+                                "Delete" -> prismConfirm(context, "Delete \"$name\"?", "Its pictures and sounds go too.") { PrismTv.deleteLook(context, id) }
+                            }
+                        }
+                    },
+                )
+            }
+        }
+        item("new") {
+            SettingsActionRow(title = "New blank look", subtitle = "Starts from Prism's built-in look", onClick = {
+                prismAsk(context, "Name of the new look", "Look ${looks.size + 1}") { PrismTv.newLook(context, it, copy = false) }
+            })
+        }
+        if (active.isNotEmpty()) {
+            item("copy") {
+                SettingsActionRow(title = "Copy this look", subtitle = "A new look starting from the one showing", onClick = {
+                    prismAsk(context, "Name of the copy", "Look ${looks.size + 1}") { PrismTv.newLook(context, it, copy = true) }
+                })
+            }
+            item("builtin") {
+                SettingsActionRow(title = "Show Prism's built-in look", subtitle = "Your looks are kept, to switch back to", onClick = {
+                    PrismTv.clear(context)
+                    toast("Showing Prism's built-in look")
+                })
+            }
+        }
+    }
+}
+
+// ---- 2. Colours ----
+
+private val OWN_COLOURS = listOf(
+    "Violet" to 0x8E6CFF, "Opal" to 0x7FD8D0, "Gold" to 0xE0B84B, "Crimson" to 0xD8334A, "Rose" to 0xF07AA0,
+    "Ocean" to 0x2E86DE, "Emerald" to 0x2ECC71, "Amber" to 0xF39C12, "Ice" to 0xA8D8FF, "Silver" to 0xC0C4CC,
+)
+
+@Composable
+private fun PrismTvColoursPage(context: Context, look: JSONObject, edit: ((JSONObject) -> Unit) -> Unit) {
+    val themes = AppTheme.entries.filter { it != AppTheme.CUSTOM }
+    val theme = look.optString("theme", "").takeIf { it.isNotEmpty() }
+    val custom = if (look.has("customColor") && !look.isNull("customColor")) look.optInt("customColor") and 0xFFFFFF else null
+    fun save(change: (JSONObject) -> Unit) {
+        edit(change)
+        PrismTv.applyColoursNow(context)
+    }
+    LazyColumn {
+        item("theme") {
+            val now = themes.firstOrNull { it.name == theme }
             SettingsActionRow(
-                title = "Sound: $label, remove",
-                subtitle = "Takes the $label sounds off this TV",
+                title = "Colour theme",
+                subtitle = "Press to try the next one",
+                value = if (theme == AppTheme.CUSTOM.name) "Your own colour" else now?.displayName ?: "The TV's own",
                 onClick = {
-                    val files = keys.mapNotNull { o.optJSONObject("sounds")?.optJSONObject(it)?.optString("file") }
-                    save { look ->
-                        keys.forEach { look.optJSONObject("sounds")?.remove(it) }
-                        look.optJSONObject("soundChoice")?.remove(moment)
-                    }
-                    PrismTvMedia.forget(context, files)
+                    val next = themes[((now?.let { themes.indexOf(it) } ?: -1) + 1) % themes.size]
+                    save { it.put("theme", next.name) }
                 },
             )
         }
+        item("own") {
+            val index = OWN_COLOURS.indexOfFirst { it.second == custom }
+            SettingsActionRow(
+                title = "Your own colour",
+                subtitle = "Press to try the next one, or type a colour code (like #8E6CFF) with Type a colour",
+                value = OWN_COLOURS.getOrNull(index)?.first ?: custom?.let { "#%06X".format(it) } ?: "Not used",
+                onClick = {
+                    val next = OWN_COLOURS[(index + 1) % OWN_COLOURS.size].second
+                    save { it.put("theme", AppTheme.CUSTOM.name).put("customColor", next) }
+                },
+            )
+        }
+        item("type") {
+            SettingsActionRow(title = "Type a colour", subtitle = "A six-digit colour code", onClick = {
+                prismAsk(context, "Colour code", custom?.let { "#%06X".format(it) } ?: "#") { typed ->
+                    typed.removePrefix("#").toIntOrNull(16)?.takeIf { typed.removePrefix("#").length == 6 }?.let { c ->
+                        save { it.put("theme", AppTheme.CUSTOM.name).put("customColor", c) }
+                    } ?: Toast.makeText(context, "That isn't a colour code", Toast.LENGTH_SHORT).show()
+                }
+            })
+        }
+        item("amoled") {
+            SettingsToggleRow(
+                title = "Pure black backgrounds",
+                subtitle = "Black behind everything, good on OLED TVs",
+                checked = look.optBoolean("amoled", false),
+                onToggle = { save { it.put("amoled", !look.optBoolean("amoled", false)) } },
+            )
+        }
     }
+}
 
-    // Fonts: the built-in styles plus any font file added here.
-    val fontFiles = PrismTvMedia.fontFiles(context)
-    val fonts = listOf<String?>(null, "sans", "serif", "mono", "cursive") + fontFiles.map { "file:$it" }
-    fun fontLabel(key: String?) = when (key) {
+// ---- 3. Pictures ----
+
+@Composable
+private fun PrismTvPicturesPage(
+    look: JSONObject,
+    slot: Slot,
+    edit: ((JSONObject) -> Unit) -> Unit,
+    pick: (String, String, (String) -> Unit) -> Unit,
+    toast: (String) -> Unit,
+    openCrop: (String) -> Unit,
+) {
+    val context = LocalContext.current
+    val pictures = PrismTvMedia.pictures(look, slot)
+    val chosen = look.optJSONObject("pictureChoice")?.optString(slot.single, "")?.takeIf { it.isNotEmpty() }
+    var focused by remember(slot) { mutableStateOf(pictures.firstOrNull()) }
+    Row(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(modifier = Modifier.weight(1f).fillMaxHeight()) {
+            item("add") {
+                SettingsActionRow(title = "Add a picture", subtitle = "From a file on the TV (sent with Send Anywhere, or the Prism folder)", onClick = {
+                    pick("image/*", "picture") { name ->
+                        edit { l -> PrismTvMedia.addPicture(l, slot, name) }
+                        toast("Added")
+                    }
+                })
+            }
+            if (pictures.size > 1) {
+                item("random") {
+                    SettingsToggleRow(
+                        title = "A different one each start",
+                        subtitle = "Off shows the one picked below every time",
+                        checked = chosen == null,
+                        onToggle = {
+                            edit { l ->
+                                val choice = l.optJSONObject("pictureChoice") ?: JSONObject().also { l.put("pictureChoice", it) }
+                                if (chosen == null) choice.put(slot.single, (focused ?: pictures.first()).file) else choice.remove(slot.single)
+                            }
+                        },
+                    )
+                }
+            }
+            pictures.forEachIndexed { i, p ->
+                item(p.file) {
+                    val crop = p.wide
+                    SettingsActionRow(
+                        title = "Picture ${i + 1}",
+                        subtitle = if (chosen == p.file) "Shown every time" else null,
+                        value = when {
+                            !slot.crops -> null
+                            crop?.whole == true -> "Whole"
+                            crop != null -> "Cropped"
+                            else -> "Fills the screen"
+                        },
+                        onFocused = { focused = p },
+                        onClick = {
+                            val options = buildList {
+                                add("Show this one every time")
+                                if (slot.crops) {
+                                    add("Crop it")
+                                    add(if (crop?.whole == true) "Fill the screen" else "Show it whole")
+                                }
+                                add("Remove")
+                            }
+                            prismChoose(context, "Picture ${i + 1}", options) { which ->
+                                when (options[which]) {
+                                    "Show this one every time" -> edit { l ->
+                                        (l.optJSONObject("pictureChoice") ?: JSONObject().also { l.put("pictureChoice", it) }).put(slot.single, p.file)
+                                    }
+                                    "Crop it" -> openCrop(p.file)
+                                    "Show it whole" -> edit { l -> PrismTvMedia.setCrop(l, slot, p.file, PrismTvCrop(0f, 0f, 1f, 1f, true)) }
+                                    "Fill the screen" -> edit { l -> PrismTvMedia.setCrop(l, slot, p.file, null) }
+                                    "Remove" -> edit { l -> PrismTvMedia.removePicture(l, slot, p.file) }
+                                }
+                            }
+                        },
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.width(32.dp))
+        // What the focused picture looks like on the TV.
+        Box(modifier = Modifier.weight(1f).aspectRatio(16f / 9f).background(Color.Black), contentAlignment = Alignment.Center) {
+            val shown = focused?.takeIf { f -> pictures.any { it.file == f.file } }?.let { f -> pictures.first { it.file == f.file } }
+            var image by remember { mutableStateOf<ImageBitmap?>(null) }
+            LaunchedEffect(shown?.file, shown?.wide?.let { "${it.left},${it.top},${it.right},${it.bottom},${it.whole}" }) {
+                image = shown?.let { pic ->
+                    withContext(Dispatchers.IO) {
+                        if (slot.crops) PrismTvImages.wide(pic, 960, 540)?.asImageBitmap() else PrismTvImages.logo(pic)?.asImageBitmap()
+                    }
+                }
+            }
+            image?.let { androidx.compose.foundation.Image(it, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize()) }
+                ?: Text(if (pictures.isEmpty()) "No pictures yet" else "", color = NuvioTheme.colors.TextSecondary)
+        }
+    }
+}
+
+/** Moves a 16:9 frame over the picture with the remote: arrows move it, OK makes it smaller (then full again), Back keeps it. */
+@Composable
+private fun PrismTvCropEditor(look: JSONObject, slot: Slot, file: String, onDone: (PrismTvCrop?) -> Unit) {
+    val start = PrismTvMedia.pictures(look, slot).firstOrNull { it.file == file }?.wide?.takeIf { !it.whole }
+    var source by remember { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(file) {
+        source = withContext(Dispatchers.IO) {
+            PrismTv.mediaFile(file)?.let { f ->
+                val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                android.graphics.BitmapFactory.decodeFile(f.path, bounds)
+                var sample = 1
+                while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 1600) sample *= 2
+                android.graphics.BitmapFactory.decodeFile(f.path, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
+            }
+        }
+    }
+    val img = source
+    if (img == null) {
+        Text("Opening the picture…", color = NuvioTheme.colors.TextSecondary)
+        return
+    }
+    // The frame as fractions of the picture: its width w and height h keep the TV's 16:9 shape.
+    val aspect = img.width.toFloat() / img.height
+    val fullW = minOf(1f, (16f / 9f) / aspect)
+    var size by remember { mutableFloatStateOf(start?.let { ((it.right - it.left) / fullW).coerceIn(0.3f, 1f) } ?: 1f) }
+    val w = fullW * size
+    val h = w * aspect * 9f / 16f
+    var left by remember { mutableFloatStateOf(start?.left ?: ((1 - w) / 2)) }
+    var top by remember { mutableFloatStateOf(start?.top ?: ((1 - h) / 2)) }
+    val cl = left.coerceIn(0f, (1f - w).coerceAtLeast(0f))
+    val ct = top.coerceIn(0f, (1f - h).coerceAtLeast(0f))
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    fun crop() = PrismTvCrop(cl, ct, cl + w, ct + h, false)
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Text("Crop for the TV", color = NuvioTheme.colors.TextPrimary, fontSize = 28.sp)
+        Text("Arrows move the frame · OK makes it smaller (and back to full size) · Back keeps it", color = NuvioTheme.colors.TextSecondary, fontSize = 14.sp)
+        Spacer(Modifier.height(12.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .focusRequester(focus)
+                .focusable()
+                .onPreviewKeyEvent { e ->
+                    // Back is taken on its way up too, so it doesn't also close Customise.
+                    if (e.key == Key.Back || e.key == Key.Escape) {
+                        if (e.type == KeyEventType.KeyUp) onDone(if (size >= 0.999f) null else crop())
+                        return@onPreviewKeyEvent true
+                    }
+                    if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    val step = 0.025f
+                    when (e.key) {
+                        Key.DirectionLeft -> { left = cl - step; true }
+                        Key.DirectionRight -> { left = cl + step; true }
+                        Key.DirectionUp -> { top = ct - step; true }
+                        Key.DirectionDown -> { top = ct + step; true }
+                        Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                            val cx = cl + w / 2
+                            val cy = ct + h / 2
+                            size = if (size <= 0.35f) 1f else size - 0.15f
+                            val nw = fullW * size
+                            val nh = nw * aspect * 9f / 16f
+                            left = cx - nw / 2
+                            top = cy - nh / 2
+                            true
+                        }
+                        else -> false
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Canvas(modifier = Modifier.fillMaxHeight().aspectRatio(aspect, matchHeightConstraintsFirst = true)) {
+                drawImage(img, srcOffset = IntOffset.Zero, srcSize = IntSize(img.width, img.height), dstSize = IntSize(this.size.width.toInt(), this.size.height.toInt()))
+                val fx = cl * this.size.width
+                val fy = ct * this.size.height
+                val fw = w * this.size.width
+                val fh = h * this.size.height
+                val shade = Color.Black.copy(alpha = 0.6f)
+                drawRect(shade, Offset(0f, 0f), Size(this.size.width, fy))
+                drawRect(shade, Offset(0f, fy + fh), Size(this.size.width, this.size.height - fy - fh))
+                drawRect(shade, Offset(0f, fy), Size(fx, fh))
+                drawRect(shade, Offset(fx + fw, fy), Size(this.size.width - fx - fw, fh))
+                drawRect(Color.White, Offset(fx, fy), Size(fw, fh), style = Stroke(width = 4f))
+            }
+        }
+    }
+}
+
+// ---- 4. Fonts ----
+
+@Composable
+private fun PrismTvFontsPage(
+    look: JSONObject,
+    edit: ((JSONObject) -> Unit) -> Unit,
+    pick: (String, String, (String) -> Unit) -> Unit,
+    toast: (String) -> Unit,
+) {
+    val context = LocalContext.current
+    val fontFiles = remember(PrismTv.changes) { PrismTvMedia.fontFiles(context) }
+    val fonts = kotlin.collections.listOf<String?>(null, "sans", "serif", "mono", "cursive") + fontFiles.map { "file:$it" }
+    fun label(key: String?) = when (key) {
         null -> "App's own"
         "sans" -> "Clean"
         "serif" -> "Classic"
@@ -203,78 +593,319 @@ internal fun PrismTvCustomise() {
         "cursive" -> "Handwritten"
         else -> key.removePrefix("file:").removePrefix("sys:").substringBeforeLast('.')
     }
-    listOf("titleFont" to "Heading font", "textFont" to "Everyday font").forEach { (field, label) ->
-        val current = o.optString(field, "").takeIf { it.isNotBlank() }
-        SettingsActionRow(
-            title = label,
-            subtitle = "Press to try the next font",
-            value = fontLabel(current),
-            onClick = {
-                val list = if (current in fonts) fonts else fonts + current
-                save { look ->
-                    val chosen = next(list, current)
-                    if (chosen == null) look.remove(field) else look.put(field, chosen)
-                }
-            },
-        )
-    }
-    SettingsActionRow(
-        title = "Add a font file",
-        subtitle = "A .ttf or .otf font; it joins the choices above",
-        value = if (fontFiles.isEmpty()) "None" else "${fontFiles.size}",
-        onClick = {
-            pick("*/*", "font") { name ->
-                save { it.put("titleFont", "file:$name") }
-                toast("Added the font and used it for headings")
+    LazyColumn {
+        kotlin.collections.listOf("titleFont" to "Heading font", "textFont" to "Everyday font").forEach { (field, title) ->
+            item(field) {
+                val current = look.optString(field, "").takeIf { it.isNotBlank() }
+                SettingsActionRow(title = title, subtitle = "Press to try the next font", value = label(current), onClick = {
+                    val list = if (current in fonts) fonts else fonts + current
+                    val chosen = list[(list.indexOf(current) + 1) % list.size]
+                    edit { l -> if (chosen == null) l.remove(field) else l.put(field, chosen) }
+                })
             }
-        },
-    )
-    val sizes = listOf(0.85, 1.0, 1.15, 1.3)
-    val size = o.optDouble("textSize", 1.0).let { s -> sizes.minBy { kotlin.math.abs(it - s) } }
-    SettingsActionRow(
-        title = "Text size",
-        subtitle = "Every bit of writing in Prism",
-        value = when (size) { 0.85 -> "Small"; 1.0 -> "Normal"; 1.15 -> "Large"; else -> "Largest" },
-        onClick = { save { it.put("textSize", next(sizes, size)) } },
-    )
+        }
+        item("add") {
+            SettingsActionRow(title = "Add a font file", subtitle = "A .ttf or .otf font; it joins the choices above", value = if (fontFiles.isEmpty()) "None" else "${fontFiles.size}", onClick = {
+                pick("*/*", "font") { name ->
+                    edit { it.put("titleFont", "file:$name") }
+                    toast("Added the font and used it for headings")
+                }
+            })
+        }
+        item("size") {
+            val sizes = kotlin.collections.listOf(0.85, 1.0, 1.15, 1.3)
+            val size = look.optDouble("textSize", 1.0).let { s -> sizes.minBy { kotlin.math.abs(it - s) } }
+            SettingsActionRow(
+                title = "Text size",
+                subtitle = "Every bit of writing in Prism",
+                value = when (size) { 0.85 -> "Small"; 1.0 -> "Normal"; 1.15 -> "Large"; else -> "Largest" },
+                onClick = { edit { it.put("textSize", sizes[(sizes.indexOf(size) + 1) % sizes.size]) } },
+            )
+        }
+    }
 }
 
-/** Files for this TV's own look, kept with the rest of the look's media. */
-internal object PrismTvMedia {
-    val MOMENTS = listOf(
-        "Opening" to "opening",
-        "Profile" to "choosing a profile",
-        "PickEpisode" to "random episode",
-        "NoResults" to "nothing found",
-        "StreamFailed" to "can't play",
-    )
+// ---- 6. Quotes ----
 
+@Composable
+private fun PrismTvQuotesPage(context: Context, look: JSONObject, edit: ((JSONObject) -> Unit) -> Unit) {
+    val quotes = buildList { look.optJSONArray("quotes")?.let { a -> for (i in 0 until a.length()) add(a.optString(i)) } }
+    fun change(block: (MutableList<String>) -> Unit) = edit { l ->
+        val list = buildList { l.optJSONArray("quotes")?.let { a -> for (i in 0 until a.length()) add(a.optString(i)) } }.toMutableList()
+        block(list)
+        l.put("quotes", JSONArray(list))
+    }
+    LazyColumn {
+        item("add") {
+            SettingsActionRow(title = "Add a quote", subtitle = "Typed with the TV's keyboard (or a phone remote app)", onClick = {
+                prismAsk(context, "New quote", "") { q -> change { it.add(q) } }
+            })
+        }
+        quotes.forEachIndexed { i, q ->
+            item("q$i") {
+                SettingsActionRow(title = q, subtitle = null, onClick = {
+                    prismChoose(context, "Quote", listOf("Change it", "Remove it")) { which ->
+                        if (which == 0) prismAsk(context, "Quote", q) { new -> change { it[i] = new } }
+                        else change { it.removeAt(i) }
+                    }
+                })
+            }
+        }
+    }
+}
+
+// ---- 7. Sounds ----
+
+@Composable
+private fun PrismTvMomentPage(
+    look: JSONObject,
+    moment: String,
+    label: String,
+    edit: ((JSONObject) -> Unit) -> Unit,
+    pick: (String, String, (String) -> Unit) -> Unit,
+    toast: (String) -> Unit,
+    openTrim: (String) -> Unit,
+) {
+    val context = LocalContext.current
+    val keys = PrismTvMedia.soundKeys(look, moment)
+    val chosen = look.optJSONObject("soundChoice")?.optString(moment, "")?.takeIf { it.isNotEmpty() }
+    val sounds = look.optJSONObject("sounds")
+    LazyColumn {
+        item("add") {
+            SettingsActionRow(title = "Add a sound", subtitle = "An MP3, WAV, OGG or M4A file; trim it after", onClick = {
+                pick("audio/*", "sound") { name ->
+                    edit { l ->
+                        val all = l.optJSONObject("sounds") ?: JSONObject().also { l.put("sounds", it) }
+                        val key = if (all.has(moment)) "$moment#${PrismTv.newId()}" else moment
+                        all.put(key, JSONObject().put("file", name).put("label", "Sound").put("enabled", true).put("volume", 1.0))
+                    }
+                    toast("Added. Press it to trim it or set its volume")
+                }
+            })
+        }
+        if (keys.size > 1) {
+            item("random") {
+                SettingsToggleRow(
+                    title = "A different one each time",
+                    subtitle = "Off plays the one picked below every time",
+                    checked = chosen == null,
+                    onToggle = {
+                        edit { l ->
+                            val choice = l.optJSONObject("soundChoice") ?: JSONObject().also { l.put("soundChoice", it) }
+                            if (chosen == null) choice.put(moment, keys.first()) else choice.remove(moment)
+                        }
+                    },
+                )
+            }
+        }
+        keys.forEachIndexed { i, key ->
+            item(key) {
+                val s = sounds?.optJSONObject(key) ?: return@item
+                val volume = (s.optDouble("volume", 1.0) * 100).toInt()
+                val trimmed = s.optInt("endMs", 0) > 0
+                SettingsActionRow(
+                    title = s.optString("label", "Sound").ifBlank { "Sound" } + " ${i + 1}",
+                    subtitle = listOfNotNull(
+                        if (chosen == key) "Plays every time" else null,
+                        if (!s.optBoolean("enabled", true)) "Switched off" else null,
+                        if (trimmed) "Trimmed" else null,
+                    ).joinToString(" · ").ifBlank { null },
+                    value = "$volume%",
+                    onClick = {
+                        val options = listOf("Play it", "Trim it", "Volume: next step", "Play this one every time", if (s.optBoolean("enabled", true)) "Switch it off" else "Switch it on", "Remove")
+                        prismChoose(context, "$label ${i + 1}", options) { which ->
+                            when (which) {
+                                0 -> PrismTvSounds.playSound(PrismTvMedia.sound(s))
+                                1 -> openTrim(key)
+                                2 -> {
+                                    val steps = listOf(25, 50, 75, 100)
+                                    val next = steps.firstOrNull { it > volume } ?: steps.first()
+                                    edit { l -> l.optJSONObject("sounds")?.optJSONObject(key)?.put("volume", next / 100.0) }
+                                    PrismTvSounds.playSound(PrismTvMedia.sound(s, volume = next / 100f))
+                                }
+                                3 -> edit { l -> (l.optJSONObject("soundChoice") ?: JSONObject().also { l.put("soundChoice", it) }).put(moment, key) }
+                                4 -> edit { l -> l.optJSONObject("sounds")?.optJSONObject(key)?.put("enabled", !s.optBoolean("enabled", true)) }
+                                5 -> edit { l ->
+                                    l.optJSONObject("sounds")?.remove(key)
+                                    if (l.optJSONObject("soundChoice")?.optString(moment) == key) l.optJSONObject("soundChoice")?.remove(moment)
+                                }
+                            }
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+/** Sets where a sound starts and ends: left and right move the start or end (the row in focus), OK plays it. */
+@Composable
+private fun PrismTvTrimEditor(look: JSONObject, key: String, onDone: (Int, Int) -> Unit) {
+    val s = look.optJSONObject("sounds")?.optJSONObject(key) ?: return
+    val length = remember(key) { PrismTvMedia.durationMs(s.optString("file")) }
+    var start by remember { mutableStateOf(s.optInt("startMs", 0)) }
+    var end by remember { mutableStateOf(s.optInt("endMs", 0).takeIf { it > 0 } ?: length) }
+    var editingEnd by remember { mutableStateOf(false) }
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    fun play() = PrismTvSounds.playSound(PrismTvMedia.sound(s, start = start, end = end))
+    fun secs(ms: Int) = "%.1f s".format(ms / 1000f)
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .focusRequester(focus)
+            .focusable()
+            .onPreviewKeyEvent { e ->
+                if (e.key == Key.Back || e.key == Key.Escape) {
+                    if (e.type == KeyEventType.KeyUp) {
+                        PrismTvSounds.stop()
+                        onDone(start, if (end >= length) 0 else end)
+                    }
+                    return@onPreviewKeyEvent true
+                }
+                if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (e.key) {
+                    Key.DirectionUp, Key.DirectionDown -> { editingEnd = !editingEnd; true }
+                    Key.DirectionLeft, Key.DirectionRight -> {
+                        val d = if (e.key == Key.DirectionLeft) -100 else 100
+                        if (editingEnd) end = (end + d).coerceIn(start + 200, length) else start = (start + d).coerceIn(0, end - 200)
+                        true
+                    }
+                    Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> { play(); true }
+                    else -> false
+                }
+            },
+    ) {
+        Text("Trim the sound", color = NuvioTheme.colors.TextPrimary, fontSize = 28.sp)
+        Text("Up and down pick the start or the end · left and right move it a tenth of a second · OK plays it · Back keeps it", color = NuvioTheme.colors.TextSecondary, fontSize = 14.sp)
+        Spacer(Modifier.height(32.dp))
+        Text((if (!editingEnd) "▶ " else "   ") + "Starts at ${secs(start)}", color = if (!editingEnd) NuvioTheme.colors.TextPrimary else NuvioTheme.colors.TextSecondary, fontSize = 24.sp)
+        Spacer(Modifier.height(12.dp))
+        Text((if (editingEnd) "▶ " else "   ") + "Ends at ${secs(end)}", color = if (editingEnd) NuvioTheme.colors.TextPrimary else NuvioTheme.colors.TextSecondary, fontSize = 24.sp)
+        Spacer(Modifier.height(24.dp))
+        // The whole sound, with the part kept lit.
+        Canvas(modifier = Modifier.fillMaxWidth().height(28.dp)) {
+            val total = length.coerceAtLeast(1).toFloat()
+            drawRect(Color.White.copy(alpha = 0.15f), size = this.size)
+            drawRect(Color.White.copy(alpha = 0.7f), Offset(this.size.width * start / total, 0f), Size(this.size.width * (end - start) / total, this.size.height))
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("Plays ${secs(end - start)} of ${secs(length)}", color = NuvioTheme.colors.TextSecondary, fontSize = 14.sp)
+    }
+}
+
+// ---- Small dialogs (the TV's own, which work with the remote) ----
+
+internal fun prismChoose(context: Context, title: String, options: List<String>, then: (Int) -> Unit) {
+    android.app.AlertDialog.Builder(context)
+        .setTitle(title)
+        .setItems(options.toTypedArray()) { _, which -> then(which) }
+        .setNegativeButton("Cancel", null)
+        .show()
+}
+
+internal fun prismAsk(context: Context, title: String, start: String, then: (String) -> Unit) {
+    val box = android.widget.EditText(context).apply { setText(start) }
+    android.app.AlertDialog.Builder(context)
+        .setTitle(title)
+        .setView(box)
+        .setPositiveButton("Save") { _, _ -> box.text.toString().trim().takeIf { it.isNotEmpty() }?.let(then) }
+        .setNegativeButton("Cancel", null)
+        .show()
+}
+
+internal fun prismConfirm(context: Context, title: String, message: String, then: () -> Unit) {
+    android.app.AlertDialog.Builder(context)
+        .setTitle(title)
+        .setMessage(message)
+        .setPositiveButton("Yes") { _, _ -> then() }
+        .setNegativeButton("No", null)
+        .show()
+}
+
+/** Files and look changes for Customise on the TV. */
+internal object PrismTvMedia {
     fun copyIn(context: Context, uri: Uri, kind: String): String? = runCatching {
         val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
         val shown = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
             ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
         val ext = shown?.substringAfterLast('.', "")?.lowercase()?.takeIf { it.length in 2..4 }
             ?: when (kind) { "picture" -> "jpg"; "sound" -> "mp3"; else -> "ttf" }
-        val base = if (kind == "font" && shown != null) shown.substringBeforeLast('.').filter { it.isLetterOrDigit() || it == ' ' || it == '-' }.trim() else ""
-        val name = (if (base.isNotEmpty()) "tv-$base" else "tv-$kind-${System.currentTimeMillis()}") + ".$ext"
+        val name = PrismTv.newId() + "." + ext
         File(PrismTv.mediaDir(context), name).writeBytes(bytes)
         name
     }.getOrNull()
 
-    fun pictures(o: JSONObject, list: String, single: String): List<String> = buildList {
-        o.optJSONObject(single)?.optString("file")?.takeIf { it.isNotBlank() }?.let(::add)
-        o.optJSONArray(list)?.let { a -> for (i in 0 until a.length()) a.optJSONObject(i)?.optString("file")?.takeIf { it.isNotBlank() }?.let(::add) }
+    private fun crop(c: JSONObject?): PrismTvCrop? = c?.let {
+        PrismTvCrop(it.optDouble("left", 0.0).toFloat(), it.optDouble("top", 0.0).toFloat(), it.optDouble("right", 1.0).toFloat(), it.optDouble("bottom", 1.0).toFloat(), it.optBoolean("whole", false))
+    }
+
+    /** All of a slot's pictures, the older single one first. */
+    fun pictures(o: JSONObject, slot: Slot): List<PrismTvPicture> = buildList {
+        o.optJSONObject(slot.single)?.let { p -> p.optString("file").takeIf { it.isNotBlank() }?.let { add(PrismTvPicture(it, crop(p.optJSONObject("wide")))) } }
+        o.optJSONArray(slot.list)?.let { a ->
+            for (i in 0 until a.length()) a.optJSONObject(i)?.let { p -> p.optString("file").takeIf { it.isNotBlank() }?.let { add(PrismTvPicture(it, crop(p.optJSONObject("wide")))) } }
+        }
+    }
+
+    /** Moves the older single picture into the slot's list, so every picture is edited the same way. */
+    private fun slotList(o: JSONObject, slot: Slot): JSONArray {
+        val list = o.optJSONArray(slot.list) ?: JSONArray().also { o.put(slot.list, it) }
+        o.optJSONObject(slot.single)?.let { single ->
+            val merged = JSONArray().put(single)
+            for (i in 0 until list.length()) merged.put(list.get(i))
+            o.remove(slot.single)
+            o.put(slot.list, merged)
+            return merged
+        }
+        return list
+    }
+
+    fun addPicture(o: JSONObject, slot: Slot, file: String) {
+        slotList(o, slot).put(JSONObject().put("file", file))
+    }
+
+    fun removePicture(o: JSONObject, slot: Slot, file: String) {
+        val list = slotList(o, slot)
+        val kept = JSONArray()
+        for (i in 0 until list.length()) list.optJSONObject(i)?.takeIf { it.optString("file") != file }?.let { kept.put(it) }
+        o.put(slot.list, kept)
+        if (o.optJSONObject("pictureChoice")?.optString(slot.single) == file) o.optJSONObject("pictureChoice")?.remove(slot.single)
+    }
+
+    fun setCrop(o: JSONObject, slot: Slot, file: String, crop: PrismTvCrop?) {
+        val list = slotList(o, slot)
+        for (i in 0 until list.length()) list.optJSONObject(i)?.takeIf { it.optString("file") == file }?.let { p ->
+            if (crop == null) p.remove("wide") else p.put(
+                "wide",
+                JSONObject().put("left", crop.left.toDouble()).put("top", crop.top.toDouble()).put("right", crop.right.toDouble())
+                    .put("bottom", crop.bottom.toDouble()).put("whole", crop.whole),
+            )
+        }
     }
 
     fun soundKeys(o: JSONObject, moment: String): List<String> =
         o.optJSONObject("sounds")?.keys()?.asSequence()?.filter { it == moment || it.startsWith("$moment#") }?.toList().orEmpty()
 
+    fun sound(s: JSONObject, volume: Float? = null, start: Int? = null, end: Int? = null) = PrismTvSound(
+        s.optString("file"),
+        true,
+        volume ?: s.optDouble("volume", 1.0).toFloat(),
+        start ?: s.optInt("startMs", 0),
+        end ?: s.optInt("endMs", 0),
+    )
+
     fun fontFiles(context: Context): List<String> =
         PrismTv.mediaDir(context).listFiles()?.map { it.name }?.filter { it.endsWith(".ttf", true) || it.endsWith(".otf", true) }?.sorted().orEmpty()
 
-    /** Deletes files no longer in the look. */
-    fun forget(context: Context, files: List<String>) {
-        val still = PrismTv.lookJson(context)?.toString().orEmpty()
-        files.filter { !it.contains('/') && !still.contains("\"$it\"") }.forEach { File(PrismTv.mediaDir(context), it).delete() }
-    }
+    fun durationMs(file: String): Int = runCatching {
+        val r = android.media.MediaMetadataRetriever()
+        try {
+            r.setDataSource(PrismTv.mediaFile(file)?.path)
+            r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toIntOrNull() ?: 0
+        } finally {
+            r.release()
+        }
+    }.getOrDefault(0).coerceAtLeast(1000)
 }

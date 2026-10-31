@@ -34,7 +34,8 @@ class PrismTvCrop(val left: Float, val top: Float, val right: Float, val bottom:
 
 class PrismTvPicture(val file: String, val wide: PrismTvCrop?)
 
-class PrismTvSound(val file: String, val enabled: Boolean, val volume: Float = 1f)
+/** [startMs] and [endMs] trim a sound chosen on the TV (the phone trims its sounds into the file itself). */
+class PrismTvSound(val file: String, val enabled: Boolean, val volume: Float = 1f, val startMs: Int = 0, val endMs: Int = 0)
 
 class PrismTvTitle(val id: String, val type: String, val name: String)
 
@@ -119,7 +120,7 @@ class PrismTvLook(
             o.optJSONObject("sounds")?.let { s ->
                 s.keys().forEach { key ->
                     val v = s.optJSONObject(key) ?: return@forEach
-                    v.str("file")?.let { sounds[key] = PrismTvSound(it, v.optBoolean("enabled", true), v.optDouble("volume", 1.0).toFloat().coerceIn(0f, 1f)) }
+                    v.str("file")?.let { sounds[key] = PrismTvSound(it, v.optBoolean("enabled", true), v.optDouble("volume", 1.0).toFloat().coerceIn(0f, 1f), v.optInt("startMs", 0), v.optInt("endMs", 0)) }
                 }
             }
             fun title(t: JSONObject?): PrismTvTitle? = t?.let {
@@ -207,8 +208,7 @@ object PrismTv {
         if (appContext != null) return
         appContext = context.applicationContext
         PrismTvSync.startAuto(context)
-        val file = File(dir(context), "look.json")
-        look = runCatching { PrismTvLook.parse(JSONObject(file.readText())) }.getOrNull()
+        look = activeJson(context)?.let { runCatching { PrismTvLook.parse(it) }.getOrNull() }
     }
 
     fun soundsEnabled(context: Context): Boolean =
@@ -219,16 +219,114 @@ object PrismTv {
         if (!value) PrismTvSounds.stop()
     }
 
-    /** Loads a look exported from the phone, replacing the one here. Returns its name, or null if it isn't a look. */
+    // ---- The TV's looks: looks.json holds them all ({"activeId", "looks": [...]}, each like the phone's), and
+    // their pictures, sounds and fonts share the media folder. An empty activeId is Prism's built-in look. ----
+
+    /** Goes up by one whenever the looks change, so screens showing them redraw. */
+    var changes by mutableStateOf(0)
+        private set
+
+    private fun stateFile(context: Context) = File(dir(context), "looks.json")
+
+    private fun readState(context: Context): JSONObject {
+        runCatching { JSONObject(stateFile(context).readText()) }.getOrNull()?.let { return it }
+        // Before several looks: the one look.json becomes the first look.
+        val old = runCatching { JSONObject(File(dir(context), "look.json").readText()) }.getOrNull()
+        val state = JSONObject().put("activeId", "").put("looks", org.json.JSONArray())
+        if (old != null) {
+            if (!old.has("id")) old.put("id", newId())
+            state.put("activeId", old.optString("id")).put("looks", org.json.JSONArray().put(old))
+        }
+        return state
+    }
+
+    private fun writeState(context: Context, state: JSONObject) {
+        stateFile(context).writeText(state.toString())
+        File(dir(context), "look.json").delete()
+        cleanMedia(context, state)
+        val active = activeOf(state)
+        PrismTvImages.clear()
+        PrismTvFonts.clear()
+        look = active?.let { runCatching { PrismTvLook.parse(it) }.getOrNull() }
+        changes++
+    }
+
+    private fun activeOf(state: JSONObject): JSONObject? {
+        val id = state.optString("activeId", "")
+        if (id.isEmpty()) return null
+        val all = state.optJSONArray("looks") ?: return null
+        for (i in 0 until all.length()) all.optJSONObject(i)?.takeIf { it.optString("id") == id }?.let { return it }
+        return null
+    }
+
+    private fun activeJson(context: Context): JSONObject? = activeOf(readState(context))
+
+    /** Every look on this TV, as (id, name). */
+    fun looks(context: Context): List<Pair<String, String>> {
+        val all = readState(context).optJSONArray("looks") ?: return emptyList()
+        return (0 until all.length()).mapNotNull { i -> all.optJSONObject(i)?.let { it.optString("id") to it.optString("name", "Look") } }
+    }
+
+    fun activeId(context: Context): String = readState(context).optString("activeId", "")
+
+    /** The look showing, for changing on the TV itself; null with the built-in look. */
+    fun lookJson(context: Context): JSONObject? = activeJson(context)
+
+    /** Saves the look showing after a change (its pictures, sounds and fonts already in [mediaDir]); with the
+     *  built-in look showing, it becomes a new look of this TV's own. */
+    fun saveLook(context: Context, o: JSONObject) {
+        init(context)
+        PrismTvLook.parse(o)
+        val state = readState(context)
+        val all = state.optJSONArray("looks") ?: org.json.JSONArray().also { state.put("looks", it) }
+        if (!o.has("id") || o.optString("id").isEmpty()) o.put("id", newId())
+        val id = o.optString("id")
+        val index = (0 until all.length()).firstOrNull { all.optJSONObject(it)?.optString("id") == id }
+        if (index != null) all.put(index, o) else all.put(o)
+        state.put("activeId", id)
+        writeState(context, state)
+    }
+
+    fun switchTo(context: Context, id: String) {
+        val state = readState(context)
+        state.put("activeId", id)
+        writeState(context, state)
+        look?.let { applyColours(context, it) }
+    }
+
+    /** A new look, blank or a copy of the one showing, and shows it. */
+    fun newLook(context: Context, name: String, copy: Boolean) {
+        val base = if (copy) activeJson(context)?.let { JSONObject(it.toString()) } else null
+        val o = (base ?: JSONObject()).put("id", newId()).put("name", name)
+        o.remove("fromPhone")
+        saveLook(context, o)
+    }
+
+    fun renameLook(context: Context, id: String, name: String) {
+        val state = readState(context)
+        val all = state.optJSONArray("looks") ?: return
+        for (i in 0 until all.length()) all.optJSONObject(i)?.takeIf { it.optString("id") == id }?.put("name", name)
+        writeState(context, state)
+    }
+
+    fun deleteLook(context: Context, id: String) {
+        val state = readState(context)
+        val all = state.optJSONArray("looks") ?: return
+        val kept = org.json.JSONArray()
+        for (i in 0 until all.length()) all.optJSONObject(i)?.takeIf { it.optString("id") != id }?.let { kept.put(it) }
+        state.put("looks", kept)
+        if (state.optString("activeId") == id) state.put("activeId", "")
+        writeState(context, state)
+    }
+
+    /** Loads a look sent from the phone (a .prism file, or copied over Wi-Fi) as the TV's "from the phone" look,
+     *  replacing the last one, and shows it. Returns its name, or null if it isn't a look. */
     fun importLook(context: Context, bytes: ByteArray): String? {
         init(context)
         val root = runCatching { JSONObject(bytes.decodeToString()) }.getOrNull() ?: return null
         val lookJson = root.optJSONObject("look") ?: return null
         val parsed = runCatching { PrismTvLook.parse(lookJson) }.getOrNull() ?: return null
-        val base = dir(context)
-        val media = File(base, "media")
-        media.deleteRecursively()
-        media.mkdirs()
+        val media = mediaDir(context)
         root.optJSONObject("media")?.let { m ->
             m.keys().forEach { name ->
                 if (name.contains('/') || name.contains("..")) return@forEach
@@ -236,38 +334,39 @@ object PrismTv {
                 File(media, name).writeBytes(data)
             }
         }
-        File(base, "look.json").writeText(lookJson.toString())
-        PrismTvImages.clear()
-        PrismTvFonts.clear()
-        look = parsed
+        val state = readState(context)
+        val all = state.optJSONArray("looks") ?: org.json.JSONArray().also { state.put("looks", it) }
+        val old = (0 until all.length()).firstOrNull { all.optJSONObject(it)?.optBoolean("fromPhone") == true }
+        lookJson.put("id", old?.let { all.optJSONObject(it).optString("id") } ?: newId()).put("fromPhone", true)
+        if (old != null) all.put(old, lookJson) else all.put(lookJson)
+        state.put("activeId", lookJson.optString("id"))
+        writeState(context, state)
         applyColours(context, parsed)
         return parsed.name
     }
 
-    /** The look as stored here (look.json), for changing on the TV itself; null with the built-in look. */
-    fun lookJson(context: Context): JSONObject? =
-        runCatching { JSONObject(File(dir(context), "look.json").readText()) }.getOrNull()
-
-    /** Saves a look changed on the TV (its pictures, sounds and fonts already in [mediaDir]) and shows it. */
-    fun saveLook(context: Context, o: JSONObject) {
-        init(context)
-        val parsed = PrismTvLook.parse(o)
-        File(dir(context), "look.json").writeText(o.toString())
-        PrismTvImages.clear()
-        PrismTvFonts.clear()
-        look = parsed
-    }
-
     fun mediaDir(context: Context) = File(dir(context), "media").apply { mkdirs() }
 
-    /** Goes back to Prism's built-in opening and no sounds. */
+    /** Goes back to Prism's built-in opening and no sounds (the TV's looks are kept, to switch back to). */
     fun clear(context: Context) {
-        val base = dir(context)
-        File(base, "media").deleteRecursively()
-        File(base, "look.json").delete()
-        PrismTvImages.clear()
-        PrismTvFonts.clear()
-        look = null
+        val state = readState(context)
+        state.put("activeId", "")
+        writeState(context, state)
+    }
+
+    /** Removes media no look uses. Names are random, so a name found anywhere in the looks counts as used. */
+    private fun cleanMedia(context: Context, state: JSONObject) {
+        val text = state.toString()
+        mediaDir(context).listFiles()?.forEach { f ->
+            if (!text.contains("\"${f.name}\"") && !text.contains(":${f.name}\"")) f.delete()
+        }
+    }
+
+    fun newId(): String = buildString { repeat(12) { append("abcdefghijklmnopqrstuvwxyz0123456789"[kotlin.random.Random.nextInt(36)]) } }
+
+    /** Sets the TV's colours from a look (its theme, own colour and pure black). */
+    fun applyColoursNow(context: Context) {
+        look?.let { applyColours(context, it) }
     }
 
     private fun applyColours(context: Context, l: PrismTvLook) {
@@ -378,12 +477,17 @@ object PrismTvSounds {
         val pick = l.soundChoice[base]?.let { key -> choices.firstOrNull { it.first == key } }
             ?: choices.filter { it.first != last[base] }.ifEmpty { choices }.random()
         last[base] = pick.first
-        val file = PrismTv.mediaFile(pick.second.file)?.takeIf { it.isFile } ?: return then()
+        playSound(pick.second, then)
+    }
+
+    /** Plays one sound now, trimmed and at its volume (also used to try a sound in Customise). */
+    fun playSound(sound: PrismTvSound, then: () -> Unit = {}) {
+        val file = PrismTv.mediaFile(sound.file)?.takeIf { it.isFile } ?: return then()
         stop()
         val p = MediaPlayer()
         val ok = runCatching {
             p.setDataSource(file.path)
-            p.setVolume(pick.second.volume, pick.second.volume)
+            p.setVolume(sound.volume, sound.volume)
             p.setOnCompletionListener {
                 it.release()
                 if (player === it) player = null
@@ -396,7 +500,16 @@ object PrismTvSounds {
                 true
             }
             p.prepare()
+            if (sound.startMs > 0) p.seekTo(sound.startMs)
             p.start()
+            if (sound.endMs > sound.startMs) {
+                main.postDelayed({
+                    if (player === p) {
+                        stop()
+                        then()
+                    }
+                }, (sound.endMs - sound.startMs).toLong())
+            }
         }.isSuccess
         if (ok) player = p else {
             p.release()
