@@ -56,9 +56,9 @@ perl -0pi -e 's/(\n(\s*)val uiState by viewModel\.uiState\.collectAsState\(\)\n)
 grep -q 'PrismTvSounds.stop()' "$player"
 
 # "Play random episode" in the side menu: one of the look's show cards, its sound, then a random episode.
-perl -0pi -e 's/(\n(\s*)add\(\n\s*DrawerItem\(\n\s*route = Screen\.Home\.route,\n\s*label = strNavHome,\n\s*icon = Icons\.Default\.Home\n\s*\)\n\s*\)\n)/$1$2add(DrawerItem(route = com.nuvio.tv.ui.components.PRISM_RANDOM_ROUTE, label = "Play random episode", icon = com.nuvio.tv.ui.components.prismRandomIcon))\n/' "$main"
+perl -0pi -e 's/(\n(\s*)add\(\n\s*DrawerItem\(\n\s*route = Screen\.Home\.route,\n\s*label = strNavHome,\n\s*icon = Icons\.Default\.Home\n\s*\)\n\s*\)\n)/$1$2add(DrawerItem(route = com.nuvio.tv.ui.components.PRISM_RANDOM_ROUTE, label = "Play Random Episode", icon = com.nuvio.tv.ui.components.prismRandomIcon))\n/' "$main"
 perl -0pi -e 's/(private fun navigateToDrawerRoute\(\n\s*navController: NavHostController,\n\s*currentRoute: String\?,\n\s*targetRoute: String\n\) \{\n)/$1    if (targetRoute == com.nuvio.tv.ui.components.PRISM_RANDOM_ROUTE) {\n        com.nuvio.tv.ui.components.PrismTvRandom.go(navController.context) { navigateToDrawerRoute(navController, null, it) }\n        return\n    }\n/' "$main"
-grep -q 'PRISM_RANDOM_ROUTE, label = "Play random episode"' "$main"; grep -q 'PrismTvRandom.go(navController.context)' "$main"
+grep -q 'PRISM_RANDOM_ROUTE, label = "Play Random Episode"' "$main"; grep -q 'PrismTvRandom.go(navController.context)' "$main"
 # Sleep: "Still watching?" over playback, and the screensaver (Nuvio's Ambient Mode) given an end so the TV can sleep.
 perl -0pi -e 's/(\n(\s*)if \(ambientIdleController\.consumeKeyEvent\(event\)\) return true\n)/\n$2if (com.nuvio.tv.ui.components.PrismTvSleep.onKey(event)) {\n$2    ambientIdleController.dismiss()\n$2    return true\n$2}$1/' "$main"
 perl -0pi -e 's/(\n(\s*)AmbientModeHost\(\n(?:.*\n)*?\s*onShown = \{ trailerPlayerPool\.stop\(\) \}\n\s*\)\n)/$1$2com.nuvio.tv.ui.components.PrismTvSleepLayer(\n$2    playing = currentRoute?.startsWith("player\/") == true,\n$2    onStop = {\n$2        navController.navigate(Screen.Home.route) {\n$2            popUpTo(navController.graph.startDestinationId) { saveState = false }\n$2            launchSingleTop = true\n$2        }\n$2    }\n$2)\n/' "$main"
@@ -166,6 +166,12 @@ perl -0pi -e 's/(\n\s*onToggleWatched: \(\) -> Unit)\n\) \{/$1,\n    prismId: St
 perl -0pi -e 's/(\n(\s*)\}\n\s*\}\n\s*\}\n\n\@OptIn\(ExperimentalTvMaterial3Api::class\)\n\@Composable\nfun PosterListPickerDialog)/\n$2}\n$2com.nuvio.tv.ui.components.PrismTvRowActions(prismId, onDismiss)\n    }\n}\n\n\@OptIn(ExperimentalTvMaterial3Api::class)\n\@Composable\nfun PosterListPickerDialog/' "$podialog"
 perl -0pi -e 's/(\n(\s*)isWatchedPending = state\.isWatchedPending,\n)(\s*onDismiss = \{ controller\.dismiss\(\) \},)/$1$2prismId = target.id,\n$3/' "$podialog"
 grep -q 'PrismTvRowActions(prismId, onDismiss)' "$podialog"; grep -q 'prismId = target.id,' "$podialog"; grep -q 'prismId: String? = null' "$podialog"
+
+# Side menu names scroll when too long instead of shrinking (Play Random Episode), in both side menu styles.
+for f in app/src/main/java/com/nuvio/tv/ModernSidebarBlurPanel.kt app/src/main/java/com/nuvio/tv/MainActivity.kt; do
+  perl -0pi -e 's/\bAutoResizeText\(\n(\s*)text = label,/com.nuvio.tv.ui.components.PrismTvSideLabel(\n$1text = label,/g; s/com\.nuvio\.tv\.ui\.components\.com\.nuvio\.tv\.ui\.components\./com.nuvio.tv.ui.components./g' "$f"
+  grep -q 'PrismTvSideLabel(' "$f"
+done
 
 # The look's fonts (headings and everyday text) and text size.
 tt=app/src/main/java/com/nuvio/tv/ui/theme/Theme.kt
