@@ -1,5 +1,6 @@
 package com.nuvio.tv.ui.components
 
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.snapshotFlow
 import com.nuvio.tv.domain.model.CatalogRow
 import com.nuvio.tv.domain.model.ContentType
@@ -129,3 +130,41 @@ object PrismTvRows {
         }
     }.getOrNull()
 }
+
+/** Extra poster options (long press), as on the phone: take the title out of any of your own Home rows it's in. */
+@androidx.compose.runtime.Composable
+fun PrismTvRowActions(id: String?, onDone: () -> Unit) {
+    if (id == null) return
+    val context = androidx.compose.ui.platform.LocalContext.current
+    @Suppress("UNUSED_VARIABLE") val changes = PrismTv.changes
+    val rows = PrismTv.look?.rows.orEmpty().filter { row -> row.items.any { it.id == id } }
+    rows.forEach { row ->
+        androidx.tv.material3.Button(
+            onClick = {
+                val look = PrismTv.lookJson(context)
+                val all = look?.optJSONArray("rows")
+                if (look != null && all != null) {
+                    for (i in 0 until all.length()) {
+                        val r = all.optJSONObject(i) ?: continue
+                        if (r.optString("id") != row.id) continue
+                        val items = r.optJSONArray("items") ?: continue
+                        val kept = org.json.JSONArray()
+                        for (j in 0 until items.length()) items.optJSONObject(j)?.takeIf { it.optString("id") != id }?.let(kept::put)
+                        r.put("items", kept)
+                    }
+                    PrismTv.saveLook(context, look)
+                    PrismTvSounds.play(context, "Removed")
+                }
+                onDone()
+            },
+            modifier = androidx.compose.ui.Modifier.fillMaxWidth(),
+            colors = androidx.tv.material3.ButtonDefaults.colors(
+                containerColor = com.nuvio.tv.ui.theme.NuvioTheme.colors.BackgroundCard,
+                contentColor = com.nuvio.tv.ui.theme.NuvioTheme.colors.TextPrimary,
+            ),
+        ) {
+            androidx.tv.material3.Text("Remove from ${row.title}")
+        }
+    }
+}
+

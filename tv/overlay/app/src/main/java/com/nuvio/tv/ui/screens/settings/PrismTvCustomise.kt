@@ -1116,6 +1116,15 @@ private fun PrismTvHomePage(look: JSONObject, edit: ((JSONObject) -> Unit) -> Un
                 )
             }
         }
+        if (clips.size > 1) {
+            item("clipsSort") {
+                SettingsActionRow(title = "Sort…", subtitle = "Put the clips in order by name, reversed or shuffled", onClick = {
+                    prismChoose(context, "Sort the clips", PRISM_SORTS) { which ->
+                        edit { l -> l.put("clips", JSONArray(prismSorted(PrismTvHome.clips(l), which) { it.optString("name") })) }
+                    }
+                })
+            }
+        }
         clips.forEachIndexed { i, c ->
             item("clip$i") {
                 SettingsActionRow(title = c.optString("name").ifBlank { "Clip ${i + 1}" }, subtitle = null, onClick = {
@@ -1176,6 +1185,23 @@ private fun PrismTvRowPage(look: JSONObject, id: String, edit: ((JSONObject) -> 
                 }
             })
         }
+        if (items.size > 1) {
+            item("sort") {
+                SettingsActionRow(title = "Sort…", subtitle = "By name, by year, reversed or shuffled", onClick = {
+                    prismChoose(context, "Sort the row", PRISM_SORTS + listOf("Newest year first", "Oldest year first")) { which ->
+                        changeRow { r ->
+                            val list = PrismTvHome.items(r)
+                            fun year(o: JSONObject) = o.optString("year").take(4).toIntOrNull()
+                            r.put("items", JSONArray(when (which) {
+                                4 -> list.sortedByDescending { year(it) ?: 0 }
+                                5 -> list.sortedBy { year(it) ?: 9999 }
+                                else -> prismSorted(list, which) { it.optString("name") }
+                            }))
+                        }
+                    }
+                })
+            }
+        }
         items.forEachIndexed { i, t ->
             item("t$i") {
                 SettingsActionRow(title = t.optString("name"), subtitle = t.optString("year").takeIf { it.isNotBlank() && it != "null" }, value = if (t.optString("type") == "series") "Show" else "Movie", onClick = {
@@ -1206,6 +1232,18 @@ private fun PrismTvCardsPage(look: JSONObject, edit: ((JSONObject) -> Unit) -> U
                     }
                 }
             })
+        }
+        if (cards.size > 1) {
+            item("sort") {
+                SettingsActionRow(title = "Sort…", subtitle = "Put the shows in order by name, reversed or shuffled", onClick = {
+                    prismChoose(context, "Sort the shows", PRISM_SORTS) { which ->
+                        edit { l ->
+                            l.remove("showCard")
+                            l.put("showCards", JSONArray(prismSorted(PrismTvHome.cards(l), which) { it.optString("name") }))
+                        }
+                    }
+                })
+            }
         }
         cards.forEachIndexed { i, c ->
             item("c$i") {
@@ -1241,6 +1279,15 @@ private fun PrismTvQuotesPage(context: Context, look: JSONObject, edit: ((JSONOb
             SettingsActionRow(title = "Add a quote", subtitle = "Typed with the TV's keyboard (or a phone remote app)", onClick = {
                 prismAsk(context, "New quote", "") { q -> change { it.add(q) } }
             })
+        }
+        if (quotes.size > 1) {
+            item("sort") {
+                SettingsActionRow(title = "Sort…", subtitle = "Put the quotes in order A to Z, reversed or shuffled", onClick = {
+                    prismChoose(context, "Sort the quotes", PRISM_SORTS) { which ->
+                        change { list -> val sorted = prismSorted(list.toList(), which) { it }; list.clear(); list.addAll(sorted) }
+                    }
+                })
+            }
         }
         quotes.forEachIndexed { i, q ->
             item("q$i") {
@@ -1397,6 +1444,16 @@ private fun PrismTvTrimEditor(look: JSONObject, key: String, onDone: (Int, Int) 
 }
 
 // ---- Small dialogs (the TV's own, which work with the remote) ----
+
+/** "Sort…" for Customise's lists, as on the phone: each choice puts the list in that order once. */
+private val PRISM_SORTS = listOf("A to Z", "Z to A", "Reverse the order", "Shuffle")
+
+private fun <T> prismSorted(list: List<T>, which: Int, name: (T) -> String): List<T> = when (which) {
+    0 -> list.sortedBy { name(it).lowercase() }
+    1 -> list.sortedByDescending { name(it).lowercase() }
+    2 -> list.reversed()
+    else -> list.shuffled()
+}
 
 internal fun prismChoose(context: Context, title: String, options: List<String>, then: (Int) -> Unit) {
     android.app.AlertDialog.Builder(context)

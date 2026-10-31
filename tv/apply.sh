@@ -160,6 +160,13 @@ perl -0pi -e 's/(\n(\s*)libraryRepository\.toggleDefault\(\n\s*canonical\.toLibr
 sed -i 's/^\(\s*\)PrismTvSounds.playApp(if (state.isInLibrary)/\1com.nuvio.tv.ui.components.PrismTvSounds.playApp(if (state.isInLibrary)/' "$posteropt"
 grep -q 'playApp(if (state.isInLibrary) "Removed" else "AddedToLibrary")' "$posteropt"
 
+# Poster options (long press) can take a title out of the look's own Home rows, as on the phone.
+podialog=app/src/main/java/com/nuvio/tv/ui/components/posteroptions/PosterOptionsDialog.kt
+perl -0pi -e 's/(\n\s*onToggleWatched: \(\) -> Unit)\n\) \{/$1,\n    prismId: String? = null\n) {/' "$podialog"
+perl -0pi -e 's/(\n(\s*)\}\n\s*\}\n\s*\}\n\n\@OptIn\(ExperimentalTvMaterial3Api::class\)\n\@Composable\nfun PosterListPickerDialog)/\n$2}\n$2com.nuvio.tv.ui.components.PrismTvRowActions(prismId, onDismiss)\n    }\n}\n\n\@OptIn(ExperimentalTvMaterial3Api::class)\n\@Composable\nfun PosterListPickerDialog/' "$podialog"
+perl -0pi -e 's/(\n(\s*)isWatchedPending = state\.isWatchedPending,\n)(\s*onDismiss = \{ controller\.dismiss\(\) \},)/$1$2prismId = target.id,\n$3/' "$podialog"
+grep -q 'PrismTvRowActions(prismId, onDismiss)' "$podialog"; grep -q 'prismId = target.id,' "$podialog"; grep -q 'prismId: String? = null' "$podialog"
+
 # The look's fonts (headings and everyday text) and text size.
 tt=app/src/main/java/com/nuvio/tv/ui/theme/Theme.kt
 perl -0pi -e 's/val typography = buildNuvioTypography\(getFontFamily\(appFont\)\)/val typography = com.nuvio.tv.ui.components.prismTvTypography(getFontFamily(appFont)) { buildNuvioTypography(it) }/; s/(typography = typography,\n\s*)content = content/${1}content = { com.nuvio.tv.ui.components.PrismTvTextSize(content) }/' "$tt"
