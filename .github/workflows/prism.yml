@@ -334,14 +334,14 @@ jobs:
           # Drafts left by runs that failed part-way.
           gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft --jq '.[] | select(.isDraft) | .tagName' \
             | grep '^prism-' | while read -r d; do gh release delete "$d" --repo "$GITHUB_REPOSITORY" --yes || true; done
-          # Keep only the newest 3 Prism releases (tags stay, so numbering never goes backwards), plus the newest one
+          # Keep only the newest 2 Prism releases (tags stay, so numbering never goes backwards), plus the newest one
           # with the PC app in it, so test builds never take that away.
           tags=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,createdAt --jq 'sort_by(.createdAt) | reverse | .[].tagName' | grep '^prism-' || true)
           full=""
           for t in $tags; do
             if gh release view "$t" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -q '^Prism-Windows-'; then full=$t; break; fi
           done
-          echo "$tags" | tail -n +4 | while read -r old; do
+          echo "$tags" | tail -n +3 | while read -r old; do
             [ -z "$old" ] || [ "$old" = "$full" ] || gh release delete "$old" --repo "$GITHUB_REPOSITORY" --yes || true
           done
       # The files are in the release now; drop every build copy in the repo so Actions storage stays near empty.

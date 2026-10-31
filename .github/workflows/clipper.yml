@@ -55,8 +55,8 @@ jobs:
             --latest=false \
             --title "Clipper $(date -u +%Y-%m-%d) (#$n)" \
             --notes "Clipper phone app: trims your videos into H.265 clips or sound bites."
-          # Keep only the newest 3 Clipper releases.
+          # Keep only the newest 2 Clipper releases.
           gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq '.[].tagName' \
-            | grep '^clipper-' | tail -n +4 | while read -r tag; do
+            | grep '^clipper-' | tail -n +3 | while read -r tag; do
               gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
             done
