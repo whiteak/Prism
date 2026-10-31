@@ -30,7 +30,7 @@ object PrismDesktopSync {
     var auto by mutableStateOf(runCatching { autoFile.readText().trim() == "on" }.getOrDefault(false))
         private set
 
-    fun setAuto(on: Boolean) {
+    fun changeAuto(on: Boolean) {
         auto = on
         runCatching { autoFile.writeText(if (on) "on" else "off") }
     }

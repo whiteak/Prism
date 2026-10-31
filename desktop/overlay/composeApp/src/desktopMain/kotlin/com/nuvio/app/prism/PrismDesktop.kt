@@ -69,7 +69,7 @@ object PrismDesktop : PrismPlatform {
     override val phoneCode: String? get() = PrismDesktopSync.code
     override val phoneStatus: String? get() = PrismDesktopSync.status
     override val phoneAuto: Boolean get() = PrismDesktopSync.auto
-    override fun setPhoneAuto(on: Boolean) = PrismDesktopSync.setAuto(on)
+    override fun setPhoneAuto(on: Boolean) = PrismDesktopSync.changeAuto(on)
     override suspend fun copyFromPhone(code: String?): String = PrismDesktopSync.copy(code)
 
     /** Plays the look's "Closing" sound (if it has one) before the app closes; gives up waiting after 5 seconds. */
