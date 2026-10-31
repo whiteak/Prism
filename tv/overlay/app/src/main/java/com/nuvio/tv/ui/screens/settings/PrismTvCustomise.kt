@@ -140,6 +140,18 @@ private fun PrismTvCustomiseScreen(onClose: () -> Unit) {
     val o = remember(PrismTv.changes) { PrismTv.lookJson(context) }
     val look = o ?: JSONObject()
 
+    // ---- What went wrong last time, as on the phone ----
+    LaunchedEffect(Unit) {
+        val problem = java.io.File(context.filesDir, "prism/last-problem.txt")
+        val text = runCatching { problem.takeIf { it.isFile }?.readText() }.getOrNull() ?: return@LaunchedEffect
+        android.app.AlertDialog.Builder(context)
+            .setTitle("Prism closed unexpectedly last time")
+            .setMessage("Send Claude a photo of this so it can be fixed.\n\n" + text.lines().filter { it.isNotBlank() }.take(24).joinToString("\n"))
+            .setPositiveButton("Done") { _, _ -> problem.delete() }
+            .setNegativeButton("Later", null)
+            .show()
+    }
+
     fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_LONG).show()
     fun edit(change: (JSONObject) -> Unit) {
         val next = PrismTv.lookJson(context) ?: JSONObject().put("name", "This TV")

@@ -224,6 +224,16 @@ object PrismTv {
     fun init(context: Context) {
         if (appContext != null) return
         appContext = context.applicationContext
+        // As on the phone: what went wrong is kept, so Customise can show it next time.
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        val problemFile = java.io.File(context.applicationContext.filesDir, "prism/last-problem.txt")
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            runCatching {
+                problemFile.parentFile?.mkdirs()
+                problemFile.writeText("${java.util.Date()} [${thread.name}]\n${error.stackTraceToString()}")
+            }
+            previous?.uncaughtException(thread, error)
+        }
         PrismTvSync.startAuto(context)
         look = activeJson(context)?.let { runCatching { PrismTvLook.parse(it) }.getOrNull() }
         PrismTvAvatars.url(null)
