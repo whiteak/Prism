@@ -1,5 +1,7 @@
 package com.nuvio.app.prism
 
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -101,7 +103,8 @@ internal fun PrismPanel(
             .pointerInput(Unit) { detectDragGestures { _, _ -> } },
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 12.dp, top = 36.dp, bottom = 8.dp),
+            // Clear of the status bar / notch, whatever its height.
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(start = 8.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             androidx.compose.material3.TextButton(onClick = onClose) { Text("‹ Back", color = tokens.colors.accent) }
@@ -116,7 +119,8 @@ internal fun PrismPanel(
             )
             actions()
         }
-        Box(Modifier.fillMaxSize()) { content() }
+        // Clear of the phone's navigation bar / home indicator, so buttons at the bottom can be pressed.
+        Box(Modifier.fillMaxSize().navigationBarsPadding()) { content() }
     }
 }
 
