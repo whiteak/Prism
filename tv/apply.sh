@@ -173,6 +173,11 @@ for f in app/src/main/java/com/nuvio/tv/ModernSidebarBlurPanel.kt app/src/main/j
   grep -q 'PrismTvSideLabel(' "$f"
 done
 
+# Pressing Home while on Home asked for Home's view model without Hilt, which crashes when Home's view model isn't made
+# yet (seen after changing the text size in Customise). Ask through Hilt, and never let the scroll-to-top crash the app.
+perl -0pi -e 's/val homeViewModel = androidx\.lifecycle\.ViewModelProvider\(homeEntry\)\[com\.nuvio\.tv\.ui\.screens\.home\.HomeViewModel::class\.java\]\n(\s*)homeViewModel\.requestScrollToTop\(\)/runCatching {\n$1    androidx.lifecycle.ViewModelProvider(homeEntry, androidx.hilt.navigation.HiltViewModelFactory(navController.context, homeEntry))[com.nuvio.tv.ui.screens.home.HomeViewModel::class.java].requestScrollToTop()\n$1}/' "$main"
+grep -q 'HiltViewModelFactory(navController.context, homeEntry)' "$main"
+
 # The look's fonts (headings and everyday text) and text size.
 tt=app/src/main/java/com/nuvio/tv/ui/theme/Theme.kt
 perl -0pi -e 's/val typography = buildNuvioTypography\(getFontFamily\(appFont\)\)/val typography = com.nuvio.tv.ui.components.prismTvTypography(getFontFamily(appFont)) { buildNuvioTypography(it) }/; s/(typography = typography,\n\s*)content = content/${1}content = { com.nuvio.tv.ui.components.PrismTvTextSize(content) }/' "$tt"

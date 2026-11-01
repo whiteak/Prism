@@ -680,15 +680,8 @@ private fun PrismTvFontsPage(
 ) {
     val context = LocalContext.current
     val fontFiles = remember(PrismTv.changes) { PrismTvMedia.fontFiles(context) }
-    val fonts = kotlin.collections.listOf<String?>(null, "sans", "serif", "mono", "cursive") + fontFiles.map { "file:$it" }
-    fun label(key: String?) = when (key) {
-        null -> "App's own"
-        "sans" -> "Clean"
-        "serif" -> "Classic"
-        "mono" -> "Typewriter"
-        "cursive" -> "Handwritten"
-        else -> key.removePrefix("file:").removePrefix("sys:").substringBeforeLast('.')
-    }
+    val fonts = com.nuvio.tv.ui.components.PrismTvFonts.choices(fontFiles)
+    fun label(key: String?) = com.nuvio.tv.ui.components.PrismTvFonts.label(key)
     LazyColumn {
         kotlin.collections.listOf("titleFont" to "Heading font", "textFont" to "Everyday font").forEach { (field, title) ->
             item(field) {
@@ -759,7 +752,7 @@ private fun PrismTvTextAreaPage(look: JSONObject, area: String, edit: ((JSONObje
         return if (i == TEXT_COLOURS.size - 1) null else TEXT_COLOURS[i + 1].second
     }
     val fontFiles = remember(PrismTv.changes) { PrismTvMedia.fontFiles(context) }
-    val fonts = kotlin.collections.listOf<String?>(null, "sans", "serif", "mono", "cursive") + fontFiles.map { "file:$it" }
+    val fonts = com.nuvio.tv.ui.components.PrismTvFonts.choices(fontFiles)
     // A sample in this kind of text, as it looks now.
     val sample = TEXT_AREAS.firstOrNull { it.first == area }?.second ?: area
     Column {
@@ -773,7 +766,7 @@ private fun PrismTvTextAreaPage(look: JSONObject, area: String, edit: ((JSONObje
         LazyColumn {
             item("font") {
                 val current = st.optString("font", "").takeIf { it.isNotBlank() }
-                SettingsActionRow(title = "Font", subtitle = "Press to try the next one", value = current?.removePrefix("file:")?.substringBeforeLast('.') ?: "The look's own", onClick = {
+                SettingsActionRow(title = "Font", subtitle = "Press to try the next one", value = com.nuvio.tv.ui.components.PrismTvFonts.label(current, none = "The look's own"), onClick = {
                     val list = if (current in fonts) fonts else fonts + current
                     val next = cycle(list, current)
                     change { if (next == null) it.remove("font") else it.put("font", next) }

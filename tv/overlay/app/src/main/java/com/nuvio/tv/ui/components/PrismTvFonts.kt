@@ -55,6 +55,32 @@ object PrismTvFonts {
     }
 
     fun clear() = loaded.clear()
+
+    /** Android's own font styles, the same ones the phone offers (stored as "sys:<family>"). */
+    val SYSTEM = listOf(
+        "casual" to "Casual",
+        "sans-serif-condensed" to "Condensed",
+        "sans-serif-light" to "Light",
+        "sans-serif-thin" to "Thin",
+        "sans-serif-medium" to "Medium",
+        "sans-serif-black" to "Black",
+        "sans-serif-smallcaps" to "Small caps",
+        "serif-monospace" to "Old typewriter",
+    )
+
+    /** Every font Customise can pick from, in order: the app's own, the built-in styles, Android's styles, then font files. */
+    fun choices(files: List<String>): List<String?> =
+        listOf<String?>(null, "sans", "serif", "mono", "cursive") + SYSTEM.map { "sys:${it.first}" } + files.map { "file:$it" }
+
+    fun label(key: String?, none: String = "App's own"): String = when (key) {
+        null -> none
+        "sans" -> "Clean"
+        "serif" -> "Classic"
+        "mono" -> "Typewriter"
+        "cursive" -> "Handwritten"
+        else -> SYSTEM.firstOrNull { "sys:${it.first}" == key }?.second
+            ?: key.removePrefix("file:").removePrefix("sys:").substringBeforeLast('.')
+    }
 }
 
 /** A style with one kind of text's font and font options from the look ("Display", "Title", "Quote"...). */
