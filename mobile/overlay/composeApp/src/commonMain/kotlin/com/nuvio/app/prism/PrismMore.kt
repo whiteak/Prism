@@ -1,5 +1,14 @@
 package com.nuvio.app.prism
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -102,12 +111,26 @@ internal fun PrismWhichLook(look: PrismLook) {
 }
 
 @Composable
-private fun SliderLine(label: String, value: Float, range: ClosedFloatingPointRange<Float>, steps: Int = 0, text: (Float) -> String, onDone: (Float) -> Unit) {
+private fun SliderLine(
+    label: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    steps: Int = 0,
+    text: (Float) -> String,
+    onMove: (Float?) -> Unit = {},
+    onDone: (Float) -> Unit,
+) {
     val tokens = MaterialTheme.nuvio
     var v by remember(value) { mutableStateOf(value) }
     Column {
         Text("$label: ${text(v)}", color = tokens.colors.textPrimary)
-        Slider(value = v, onValueChange = { v = it }, onValueChangeFinished = { onDone(v) }, valueRange = range, steps = steps)
+        Slider(
+            value = v,
+            onValueChange = { v = it; onMove(it) },
+            onValueChangeFinished = { onMove(null); onDone(v) },
+            valueRange = range,
+            steps = steps,
+        )
     }
 }
 
@@ -115,7 +138,14 @@ private fun SliderLine(label: String, value: Float, range: ClosedFloatingPointRa
 internal fun PrismPosterSettings(look: PrismLook) {
     val tokens = MaterialTheme.nuvio
     val style = look.poster
+    // While a slider is being dragged, the preview follows it.
+    var movingSize by remember { mutableStateOf<Float?>(null) }
+    var movingCorners by remember { mutableStateOf<Float?>(null) }
+    val shown = (style ?: PrismStore.currentPoster()).let { s ->
+        s.copy(widthDp = movingSize?.roundToInt() ?: s.widthDp, cornerRadiusDp = movingCorners?.roundToInt() ?: s.cornerRadiusDp)
+    }
     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        PrismPosterPreview(shown)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Keep poster style with this look", color = tokens.colors.textPrimary, fontWeight = FontWeight.SemiBold)
@@ -124,8 +154,8 @@ internal fun PrismPosterSettings(look: PrismLook) {
             Switch(checked = style != null, onCheckedChange = { on -> PrismStore.setPoster(if (on) PrismStore.currentPoster() else null) })
         }
         if (style != null) {
-            SliderLine("Size", style.widthDp.toFloat(), 90f..180f, text = { "${it.roundToInt()}" }) { PrismStore.setPoster(style.copy(widthDp = it.roundToInt())) }
-            SliderLine("Corners", style.cornerRadiusDp.toFloat(), 0f..32f, text = { "${it.roundToInt()}" }) { PrismStore.setPoster(style.copy(cornerRadiusDp = it.roundToInt())) }
+            SliderLine("Size", style.widthDp.toFloat(), 90f..180f, text = { "${it.roundToInt()}" }, onMove = { movingSize = it }) { PrismStore.setPoster(style.copy(widthDp = it.roundToInt())) }
+            SliderLine("Corners", style.cornerRadiusDp.toFloat(), 0f..32f, text = { "${it.roundToInt()}" }, onMove = { movingCorners = it }) { PrismStore.setPoster(style.copy(cornerRadiusDp = it.roundToInt())) }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Titles under posters", color = tokens.colors.textPrimary, modifier = Modifier.weight(1f))
                 Switch(checked = !style.hideLabels, onCheckedChange = { on -> PrismStore.setPoster(style.copy(hideLabels = !on)) })
@@ -141,8 +171,10 @@ internal fun PrismPosterSettings(look: PrismLook) {
 @Composable
 internal fun PrismShapeSettings(look: PrismLook) {
     val tokens = MaterialTheme.nuvio
+    var moving by remember { mutableStateOf<Float?>(null) }
     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        SliderLine("Roundness", look.roundness, 0f..2f, steps = 7, text = {
+        PrismShapePreview(moving ?: look.roundness)
+        SliderLine("Roundness", look.roundness, 0f..2f, steps = 7, onMove = { moving = it }, text = {
             when {
                 it < 0.2f -> "square"
                 it < 0.8f -> "a little rounded"
@@ -151,6 +183,79 @@ internal fun PrismShapeSettings(look: PrismLook) {
             }
         }) { v -> PrismStore.update { it.copy(roundness = (v * 4).roundToInt() / 4f) } }
         Text("Buttons, cards, panels and sheets. Posters have their own corners above.", color = tokens.colors.textMuted, fontSize = 12.sp)
+    }
+}
+
+/** Live preview: a row of example posters in [style] (size, corners, titles, wide pictures). */
+@Composable
+private fun PrismPosterPreview(style: PrismPosterStyle) {
+    val tokens = MaterialTheme.nuvio
+    val shape = RoundedCornerShape(style.cornerRadiusDp.dp)
+    val width = (if (style.landscape) style.widthDp * 1.6f else style.widthDp.toFloat()).dp
+    val ratio = if (style.landscape) 16f / 9f else 2f / 3f
+    val tints = listOf(tokens.colors.accent, tokens.colors.textSecondary, tokens.colors.textMuted)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Preview", color = tokens.colors.textMuted, fontSize = 12.sp)
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            tints.forEachIndexed { i, tint ->
+                Column(Modifier.width(width)) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(ratio)
+                            .clip(shape)
+                            .background(Brush.linearGradient(listOf(tint.copy(alpha = 0.85f), tokens.colors.surface))),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("▶", color = tokens.colors.textPrimary.copy(alpha = 0.7f), fontSize = 22.sp)
+                    }
+                    if (!style.hideLabels) {
+                        Text(
+                            listOf("Example show", "Example film", "Another one")[i],
+                            color = tokens.colors.textPrimary,
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Live preview of [roundness] on a card, a button and a chip, the way Nuvio's shapes change. */
+@Composable
+private fun PrismShapePreview(roundness: Float) {
+    val tokens = MaterialTheme.nuvio
+    val r = roundness.coerceIn(0f, 2f)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 6.dp)) {
+        Text("Preview", color = tokens.colors.textMuted, fontSize = 12.sp)
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape((24 * r).dp))
+                .background(tokens.colors.surface)
+                .padding(14.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("A card", color = tokens.colors.textPrimary, fontWeight = FontWeight.SemiBold)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.clip(RoundedCornerShape((16 * r).dp)).background(tokens.colors.accent).padding(horizontal = 16.dp, vertical = 8.dp),
+                    ) { Text("Button", color = tokens.colors.background, fontWeight = FontWeight.SemiBold) }
+                    Box(
+                        Modifier
+                            .clip(if (r < 0.2f) RoundedCornerShape(0.dp) else RoundedCornerShape(50))
+                            .border(1.dp, tokens.colors.textMuted, if (r < 0.2f) RoundedCornerShape(0.dp) else RoundedCornerShape(50))
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    ) { Text("Chip", color = tokens.colors.textPrimary, fontSize = 13.sp) }
+                }
+            }
+        }
     }
 }
 
