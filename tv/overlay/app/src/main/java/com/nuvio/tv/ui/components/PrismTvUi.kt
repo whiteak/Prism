@@ -78,11 +78,16 @@ import org.json.JSONObject
 
 // Prism on the TV: the opening, Home background, "Play random episode" and the library from a file.
 
-/** Holds the opening up for the look's seconds on each cold start, with its sound. Any remote press skips it. */
+/**
+ * Holds the opening up for the look's seconds on each cold start, with its sound. A remote press skips it,
+ * but only one that starts after the opening is up: the release of the button that opened Prism from the
+ * TV's home screen arrives here too and used to cut the opening short straight away.
+ */
 object PrismTvIntro {
     var holding by mutableStateOf(false)
         private set
     private var started = false
+    private var pressed = false
     private var observing = false
     private val main = Handler(Looper.getMainLooper())
 
@@ -99,15 +104,18 @@ object PrismTvIntro {
         if (started) return
         started = true
         val look = PrismTv.look ?: return
-        if (look.opening == null && look.soundSet("Opening").isEmpty()) return
         holding = true
+        pressed = false
         PrismTvSounds.play(context, "Opening")
         main.postDelayed({ stop() }, look.openingSeconds.coerceIn(1, 30) * 1000L)
     }
 
     fun skipOnKey(event: android.view.KeyEvent): Boolean {
         if (!holding) return false
-        if (event.action == android.view.KeyEvent.ACTION_UP) stop()
+        when (event.action) {
+            android.view.KeyEvent.ACTION_DOWN -> if (event.repeatCount == 0) pressed = true
+            android.view.KeyEvent.ACTION_UP -> if (pressed) stop()
+        }
         return true
     }
 
