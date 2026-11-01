@@ -62,7 +62,7 @@ internal object PrismIosClipMaker {
             editor.videoPath = path
             editor.videoMaximumDuration = 3600.0
             // UIImagePickerControllerQualityTypeHigh (0); the default is medium.
-            editor.setValue(NSNumber.numberWithInt(0), forKey = "videoQuality")
+            editor.setValue(0L, forKey = "videoQuality")
             val d = object : NSObject(), UIVideoEditorControllerDelegateProtocol, UINavigationControllerDelegateProtocol {
                 fun finish(result: String?) {
                     delegate = null
