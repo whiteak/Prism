@@ -112,7 +112,7 @@ import kotlin.math.roundToInt
 
 // Prism on the iPhone: files under Application Support/prism, the Photos and Files pickers, the app's own folder in the
 // Files app (On My iPhone > <app name>) in place of Download/Prism, pictures through Skia, sounds through AVFoundation.
-// No clip maker and no Wi-Fi copying to the TV/PC here (yet).
+// The clip maker is PrismIosClipMaker; copying to the TV/PC over Wi-Fi is PrismIosShare.
 object PrismIos : PrismPlatform {
     private val files = NSFileManager.defaultManager
     private var player: AVAudioPlayer? = null
@@ -126,6 +126,7 @@ object PrismIos : PrismPlatform {
         if (Prism.platform == null) {
             Prism.install(this)
             recordCrashes()
+            runCatching { PrismIosShare.follow() }
         }
     }
 
@@ -164,6 +165,8 @@ object PrismIos : PrismPlatform {
     /** The app's folder in the Files app (needs UIFileSharingEnabled + LSSupportsOpeningDocumentsInPlace). */
     private val folderDir: String
         get() = dir(NSDocumentDirectory).also(::mkdirs)
+
+    internal val pickedDirPath: String get() = pickedDir
 
     private val pickedDir: String
         get() = (NSTemporaryDirectory().trimEnd('/') + "/prism-picked").also(::mkdirs)
@@ -204,6 +207,8 @@ object PrismIos : PrismPlatform {
         while (vc?.presentedViewController != null) vc = vc.presentedViewController
         return vc
     }
+
+    internal fun presentController(controller: UIViewController): Boolean = present(controller)
 
     private fun present(controller: UIViewController): Boolean {
         val top = topController() ?: return false
@@ -378,6 +383,10 @@ object PrismIos : PrismPlatform {
     override suspend fun readFolderFile(file: PrismFolderFile): ByteArray? = withContext(Dispatchers.IO) { readBytes(file.ref) }
 
     // ---- Clips ----
+
+    override val canMakeClips: Boolean get() = true
+
+    override suspend fun makeClip(sound: Boolean): PrismMadeClip? = PrismIosClipMaker.make(sound)
 
     override suspend fun pickRefs(kind: PrismFileKind, multiple: Boolean): List<PrismFolderFile> =
         pick(kind, multiple).map { (path, name) -> PrismFolderFile(name, sizeOf(path), path) }

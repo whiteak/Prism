@@ -20,8 +20,8 @@ for key in UIFileSharingEnabled LSSupportsOpeningDocumentsInPlace; do
   grep -q "<key>$key</key>" "$plist"
 done
 
-# No copying to the TV/PC over Wi-Fi from an iPhone (the phone side of that only exists on Android).
-customise=composeApp/src/commonMain/kotlin/com/nuvio/app/prism/PrismCustomise.kt
-perl -0pi -e 's/(\n\s*\/\/ ---- The TV and PC copy from the phone ----\n(\s*))item \{/$1if (!com.nuvio.app.isIos) item {/' "$customise"
-grep -q 'if (!com.nuvio.app.isIos) item {' "$customise"
+# The TV and PC copy from the iPhone over the home Wi-Fi (PrismIosShare): iOS asks for local network access once.
+grep -q '<key>NSLocalNetworkUsageDescription</key>' "$plist" || perl -0pi -e 's#<dict>\n#<dict>\n\t<key>NSLocalNetworkUsageDescription</key>\n\t<string>So your TV and PC can copy what you set up here, over your home Wi-Fi.</string>\n#' "$plist"
+grep -q '<key>NSLocalNetworkUsageDescription</key>' "$plist"
+
 echo "Prism applied (iPhone)."
