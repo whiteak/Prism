@@ -149,6 +149,12 @@ private fun PrismTvCustomiseScreen(onClose: () -> Unit) {
             .setMessage("Send Claude a photo of this so it can be fixed.\n\n" + text.lines().filter { it.isNotBlank() }.take(24).joinToString("\n"))
             .setPositiveButton("Done") { _, _ -> problem.delete() }
             .setNegativeButton("Later", null)
+            // The whole report as a file in Download/Prism, to send to Claude in full.
+            .setNeutralButton("Save a copy") { _, _ ->
+                val name = "prism-tv-crash-" + java.text.SimpleDateFormat("yyyy-MM-dd-HHmmss", java.util.Locale.US).format(java.util.Date()) + ".txt"
+                val where = com.nuvio.tv.ui.components.PrismTvBackup.saveToDownloads(context, name, text.toByteArray(), "text/plain")
+                Toast.makeText(context, if (where != null) "Saved to $where/$name" else "Couldn't save the report", Toast.LENGTH_LONG).show()
+            }
             .show()
     }
 

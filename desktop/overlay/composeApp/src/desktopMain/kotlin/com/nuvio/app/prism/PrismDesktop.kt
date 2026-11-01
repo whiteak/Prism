@@ -140,7 +140,7 @@ object PrismDesktop : PrismPlatform {
     }
 
     override suspend fun saveFile(suggestedName: String, bytes: ByteArray): Boolean {
-        var file = dialog("Save look", FileDialog.SAVE, suggestedName, null) ?: return false
+        var file = dialog("Save a copy", FileDialog.SAVE, suggestedName, null) ?: return false
         if (file.extension.isEmpty()) file = File(file.parentFile, file.name + ".prism")
         return withContext(Dispatchers.IO) { runCatching { file.writeBytes(bytes) }.isSuccess }
     }

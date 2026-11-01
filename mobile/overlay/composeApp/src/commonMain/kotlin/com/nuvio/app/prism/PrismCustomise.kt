@@ -316,6 +316,13 @@ private fun PrismCustomiseScreen(onClose: () -> Unit) {
                                             fontSize = 10.sp,
                                             lineHeight = 12.sp,
                                         )
+                                        // The whole report as a file, to send to Claude in full.
+                                        PrismButton("Save a copy") {
+                                            scope.launch {
+                                                val saved = runCatching { platform.saveFile("prism-crash-report.txt", text.encodeToByteArray()) }.getOrDefault(false)
+                                                message = if (saved) "Saved the crash report" else "The crash report wasn't saved"
+                                            }
+                                        }
                                         PrismButton("Done") {
                                             platform.delete(PrismStore.problemPath)
                                             problem = null
