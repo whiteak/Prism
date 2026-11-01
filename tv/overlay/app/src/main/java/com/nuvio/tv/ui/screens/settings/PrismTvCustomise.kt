@@ -431,7 +431,10 @@ private val OWN_COLOURS = listOf(
 
 @Composable
 private fun PrismTvColoursPage(context: Context, look: JSONObject, edit: ((JSONObject) -> Unit) -> Unit) {
-    val themes = AppTheme.entries.filter { it != AppTheme.CUSTOM }
+    // Gold, Jade, Rose Gold, Arctic Blue and Graphite are Nuvio's supporter themes: the app ignores them unless
+    // you're a Nuvio supporter, so picking them did nothing. Only themes that work are offered.
+    val supporterOnly = setOf(AppTheme.GOLD, AppTheme.JADE, AppTheme.ROSE_GOLD, AppTheme.ARCTIC_BLUE, AppTheme.GRAPHITE)
+    val themes = AppTheme.entries.filter { it != AppTheme.CUSTOM && it !in supporterOnly }
     val theme = look.optString("theme", "").takeIf { it.isNotEmpty() }
     val custom = if (look.has("customColor") && !look.isNull("customColor")) look.optInt("customColor") and 0xFFFFFF else null
     fun save(change: (JSONObject) -> Unit) {
