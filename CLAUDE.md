@@ -4,19 +4,23 @@ Prism is a **customisation layer, not a full app**. This repo holds only Prism's
 fresh copy of a Nuvio fork and runs an `apply.sh` here over it. The forks' code is NOT in this repo: don't search
 for Nuvio files here. Clone the fork into a scratch dir if you need to read one.
 
+**Jason's rule: every app is its own** (Prism, Requiem, Ethereal, Supernatural, Clipper). Change only the app he
+names. Never carry a change into another app, its branch or its base unless he asks for that.
+This repo's `main` branch is Prism (and Clipper). The `requiem` branch is **Requiem, a separate app** (see below).
+
 | Target  | Fork (branch)                                    | Script(s), run in this order          | Output                      |
 |---------|--------------------------------------------------|---------------------------------------|-----------------------------|
-| Phone   | whiteak/NuvioMobile (`claude/project-thread-lph2qt`) | `mobile/apply.sh`                  | `Prism-Android-<v>.apk`     |
-| Windows | whiteak/NuvioMobile (same branch)                | `mobile/apply.sh` then `desktop/apply.sh` | `Prism-Windows-<v>.msi`  |
-| TV      | whiteak/NuvioTV (`dev`)                          | `tv/apply.sh`                         | `Prism-TV-<v>.apk`          |
+| Phone   | whiteak/NuvioMobile `base/prism`                 | `mobile/apply.sh`                     | `Prism-Android-<v>.apk`     |
+| Windows | whiteak/NuvioMobile `base/prism`                 | `mobile/apply.sh` then `desktop/apply.sh` | `Prism-Windows-<v>.msi`  |
+| TV      | whiteak/NuvioTV `base/prism`                     | `tv/apply.sh`                         | `Prism-TV-<v>.apk`          |
 | Clipper | none (standalone app in `clipper/`)              | none                                  | `Clipper-1.0.<n>.apk`       |
-| iPhone  | whiteak/NuvioMobile                              | `mobile/apply.sh` then `ios/apply.sh` | Requiem IPA only (see below)|
 
-The phone and PC build from the `lph2qt` branch, not `cmp-rewrite` (the fork's default). Those branch names are
-set in `env:` at the top of `.github/workflows/prism.yml` and `check.yml`. Change both together.
+**`base/prism` is Prism's own fixed base** in each fork (pinned on 2 Nov 2026 to what prism-107 was built from).
+It does NOT follow Ethereal (`cmp-rewrite` / `dev`) or upstream Nuvio. Move it forward, or change fork code under
+Prism, only when Jason asks, and only on `base/prism`. The branch names are set in `env:` in `prism.yml` and `check.yml`.
 
-**iPhone work (`ios/`) is NOT on `main`.** It lives on branch `claude/project-thread-rs7nwb`, which on 2 Nov 2026 was
-6 commits ahead of and 6 behind `main`. Don't merge it or delete it without asking Jason.
+**Prism's iPhone work (`ios/`) is NOT on `main`.** It lives on branch `claude/project-thread-rs7nwb` (6 ahead of and
+6 behind `main` on 2 Nov 2026). Requiem's branch has its own copy. Don't merge or delete it without asking Jason.
 
 ## Layout
 
@@ -74,9 +78,9 @@ Rules for patches:
 **Jason builds only through GitHub Actions. Don't run Gradle or set up a local Android/Windows build.**
 To check that a patch applies, run the scripts on fresh clones (no Gradle needed):
 ```bash
-git clone --depth 1 -b claude/project-thread-lph2qt https://github.com/whiteak/NuvioMobile /tmp/nm
+git clone --depth 1 -b base/prism https://github.com/whiteak/NuvioMobile /tmp/nm
 bash mobile/apply.sh /tmp/nm                     # must finish with no error
-git clone --depth 1 -b dev https://github.com/whiteak/NuvioTV /tmp/ntv
+git clone --depth 1 -b base/prism https://github.com/whiteak/NuvioTV /tmp/ntv
 bash tv/apply.sh /tmp/ntv
 ```
 Always re-clone fresh, because the scripts are not idempotent. To compile without a release, Jason runs Actions >
@@ -119,23 +123,18 @@ independent of the forks. Don't touch `prism.yml` for Clipper work.
 - Nothing personal goes in this repo (pictures, sounds, quotes and saved looks stay on devices).
 - Licence is GPLv3 (inherited from Nuvio). Keep the "built on Nuvio" credit.
 
-## Downstream: Requiem is built on top of Prism
+## Requiem: a separate app on the `requiem` branch
 
-All three Requiem apps run **this repo's scripts** first and then rebrand the result. Each one is a manual workflow
-with a `prism_ref` input:
+Requiem started as Prism with Requiem's name and pictures. It now has **its own copy** of the Prism layer on this
+repo's `requiem` branch (plus `requiem/`), its own fork bases (`base/requiem`) and its own releases
+(whiteak/Requiem). Changes on `main` never reach Requiem, and Requiem changes never touch `main`, unless Jason asks
+for a change to be copied over. Copying is then a cherry-pick onto `requiem`, checked with its scripts.
+- **Build Requiem** (`.github/workflows/requiem.yml`) is on `main` only because GitHub lists manual workflows from the
+  default branch. It builds from the `requiem` branch. Editing it is Requiem work, not Prism work.
+- For Requiem work, check out `requiem` and follow the CLAUDE.md there.
 
-| Requiem app | Workflow + script (in the fork)                                          | Checks for (don't rename)                       |
-|-------------|--------------------------------------------------------------------------|-------------------------------------------------|
-| Phone       | NuvioMobile `requiem-android.yml` + `editions/requiem/android-on-prism.sh` | `PrismAndroid.install(this)` in `MainActivity.kt` |
-| iPhone      | NuvioMobile `requiem-iphone.yml` + `editions/requiem/ios-on-prism.sh`      | `PrismIos.install();` in `MainViewController.kt`  |
-| TV          | NuvioTV `requiem-tv.yml` + `editions/requiem/tv-on-prism.sh`               | `PrismTvOpening()` in `StartupSplashScreen.kt`    |
-
-These scripts rewrite the word "Prism" inside string literals in the `prism/*.kt` / `Prism*.kt` files to "Requiem",
-so keep user-facing text as a plain "Prism" in quotes. Requiem phone and iPhone empty `mobile/icons.txt` before
-applying. When you change one of the hooks above, tell Jason that the Requiem script needs the same change.
-
-Supernatural (a separate repo) has similar patches (Trakt PKCE, update auth, library share). **Keep the two
-separate:** don't port fixes to Supernatural unless Jason asks.
+Supernatural (a separate repo) has similar patches (Trakt PKCE, update auth, library share). Don't port fixes to it
+unless Jason asks.
 
 ## Working efficiently
 
