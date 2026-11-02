@@ -29,10 +29,10 @@ concurrency:
 
 env:
   MOBILE_REPO: whiteak/NuvioMobile
-  # The Windows app lives on its own NuvioMobile branch (it already contains cmp-rewrite), so both apps build from it.
-  MOBILE_BRANCH: claude/project-thread-lph2qt
+  # Prism's own fixed bases in the forks (base/prism). They only move when Jason asks; other apps never change them.
+  MOBILE_BRANCH: base/prism
   TV_REPO: whiteak/NuvioTV
-  TV_BRANCH: dev
+  TV_BRANCH: base/prism
 
 jobs:
   check:

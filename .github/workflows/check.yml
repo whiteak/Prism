@@ -14,9 +14,9 @@ on:
 
 env:
   MOBILE_REPO: whiteak/NuvioMobile
-  MOBILE_BRANCH: claude/project-thread-lph2qt
+  MOBILE_BRANCH: base/prism
   TV_REPO: whiteak/NuvioTV
-  TV_BRANCH: dev
+  TV_BRANCH: base/prism
 
 jobs:
   android:
