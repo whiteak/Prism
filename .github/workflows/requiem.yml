@@ -1,0 +1,281 @@
+name: Build Requiem
+
+# Requiem is its own app. Its code is this repo's `requiem` branch (Prism's layer as Requiem uses it, plus requiem/:
+# Requiem's name, pictures and look), built on Requiem's own fixed bases in the forks (base/requiem). It publishes to
+# its own repo, whiteak/Requiem, so building it never changes Prism, Ethereal or Supernatural, and changes to them
+# never reach Requiem unless Jason asks for them to be copied over.
+# Manual only: Actions > Build Requiem > Run workflow, then pick the app.
+# Needs the REQUIEM_TOKEN secret: a fine-grained token with Contents read and write on whiteak/Requiem.
+# The signing key and Trakt keys are the same ones Prism uses (already secrets here).
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: Which Requiem app to build
+        type: choice
+        options: [phone, tv, iphone]
+        default: phone
+      requiem_ref:
+        description: Branch or commit of this repo with Requiem's code
+        default: requiem
+
+permissions:
+  contents: read
+
+concurrency:
+  group: requiem-${{ inputs.app }}
+  cancel-in-progress: false
+
+env:
+  REQUIEM_REPO: whiteak/Requiem
+  MOBILE_REPO: whiteak/NuvioMobile
+  TV_REPO: whiteak/NuvioTV
+  # Requiem's own fixed bases in the forks. They only move when Jason asks.
+  BASE_BRANCH: base/requiem
+  # Numbering carries on from where Requiem's releases were before the move (phone 0.6.4.2, TV 1.1.0-beta.8.2,
+  # iPhone 0.6.4.1), so installed copies see each new build as newer.
+  PHONE_FIRST_N: "3"
+  TV_FIRST_N: "3"
+  IPHONE_FIRST_N: "2"
+
+jobs:
+  android:
+    name: Build Requiem ${{ inputs.app }}
+    if: inputs.app != 'iphone'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Requiem's code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.requiem_ref }}
+          path: requiem
+      - name: Check out the app's base
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.app == 'tv' && env.TV_REPO || env.MOBILE_REPO }}
+          ref: ${{ env.BASE_BRANCH }}
+          path: app
+      - name: Pick the version
+        id: v
+        env:
+          GH_TOKEN: ${{ secrets.REQUIEM_TOKEN }}
+          KEYSTORE: ${{ secrets.SIGNING_KEYSTORE }}
+          APP: ${{ inputs.app }}
+        run: |
+          [ -n "$GH_TOKEN" ] || { echo "::error::Add the REQUIEM_TOKEN secret (a token that can write to whiteak/Requiem)."; exit 1; }
+          [ -n "$KEYSTORE" ] || { echo "::error::The SIGNING_KEYSTORE secret is missing."; exit 1; }
+          if [ "$APP" = tv ]; then
+            base=$(sed -n 's/^ *versionName = "\(.*\)"/\1/p' app/app/build.gradle.kts | head -1)
+            base_code=$(sed -n 's/^ *versionCode = \([0-9][0-9]*\)$/\1/p' app/app/build.gradle.kts | head -1)
+            first=$TV_FIRST_N
+          else
+            base=$(sed -n 's/^MARKETING_VERSION=//p' app/iosApp/Configuration/Version.xcconfig | tr -d '[:space:]')
+            base_code=$(sed -n 's/^CURRENT_PROJECT_VERSION=//p' app/iosApp/Configuration/Version.xcconfig | tr -d '[:space:]')
+            first=$PHONE_FIRST_N
+          fi
+          [ -n "$base" ] && [ -n "$base_code" ] || { echo "::error::Could not read the app version"; exit 1; }
+          tags=$(gh api "repos/$REQUIEM_REPO/tags?per_page=100" --jq '.[].name')
+          last=$(printf '%s\n' "$tags" | sed -n "s/^$APP-$(printf '%s' "$base" | sed 's/[.]/\\./g')\\.\([0-9][0-9]*\)$/\1/p" | sort -n | tail -1)
+          n=$(( ${last:-0} + 1 )); [ "$n" -ge "$first" ] || n=$first
+          echo "version=$base.$n" >> "$GITHUB_OUTPUT"
+          echo "code=$(( base_code * 1000 + n ))" >> "$GITHUB_OUTPUT"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "Building Requiem $APP $base.$n"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+          cache-dependency-path: app/**/*.gradle*
+      - name: Turn the app into Requiem
+        env:
+          APP: ${{ inputs.app }}
+          VERSION: ${{ steps.v.outputs.version }}
+          VERSION_CODE: ${{ steps.v.outputs.code }}
+        run: |
+          if [ "$APP" = tv ]; then
+            sed -i "s/^\( *versionName = \)\".*\"/\1\"$VERSION\"/; s/^\( *versionCode = \)[0-9][0-9]*$/\1$VERSION_CODE/" app/app/build.gradle.kts
+            grep -q "versionName = \"$VERSION\"" app/app/build.gradle.kts
+            bash requiem/tv/apply.sh "$PWD/app"
+            bash requiem/requiem/tv/tv-on-prism.sh "$PWD/app"
+          else
+            sed -i "s/^MARKETING_VERSION=.*/MARKETING_VERSION=$VERSION/; s/^CURRENT_PROJECT_VERSION=.*/CURRENT_PROJECT_VERSION=$VERSION_CODE/" app/iosApp/Configuration/Version.xcconfig
+            # Prism's extra app icons are Prism pictures, so Requiem leaves them out (and their files).
+            keys=$(cut -d'|' -f1 requiem/mobile/icons.txt)
+            : > requiem/mobile/icons.txt
+            bash requiem/mobile/apply.sh "$PWD/app"
+            for k in $keys; do
+              find app/composeApp/src/androidMain/res app/composeApp/src/commonMain/composeResources/drawable -type f \
+                \( -name "ic_launcher_${k}.*" -o -name "ic_launcher_${k}_foreground.*" -o -name "ic_splash_logo_${k}.*" -o -name "app_icon_${k}.*" \) -delete
+            done
+            bash requiem/requiem/mobile/android-on-prism.sh "$PWD/app"
+          fi
+      - name: Build
+        working-directory: app
+        env:
+          APP: ${{ inputs.app }}
+          KEYSTORE: ${{ secrets.SIGNING_KEYSTORE }}
+          KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
+          TRAKT_CLIENT_SECRET: ${{ secrets.TRAKT_CLIENT_SECRET }}
+          KEY_ALIAS: ethereal
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          printf '%s' "$KEYSTORE" | base64 --decode > "$RUNNER_TEMP/signing.jks"
+          if [ "$APP" = tv ]; then
+            touch local.properties local.dev.properties
+            printf 'TRAKT_CLIENT_ID=%s\nTRAKT_CLIENT_SECRET=%s\n' "$TRAKT_CLIENT_ID" "$TRAKT_CLIENT_SECRET" >> local.properties
+            NUVIO_RELEASE_STORE_FILE="$RUNNER_TEMP/signing.jks" NUVIO_RELEASE_KEY_ALIAS=$KEY_ALIAS \
+            NUVIO_RELEASE_KEY_PASSWORD="$KEY_PASSWORD" NUVIO_RELEASE_STORE_PASSWORD="$KEY_PASSWORD" \
+              ./gradlew :app:assembleFullDebug --stacktrace
+            cp app/build/outputs/apk/full/debug/app-full-universal-debug.apk "$RUNNER_TEMP/Requiem-TV-$VERSION.apk"
+          else
+            {
+              echo "NUVIO_RELEASE_STORE_FILE=$RUNNER_TEMP/signing.jks"
+              echo "NUVIO_RELEASE_STORE_PASSWORD=$KEY_PASSWORD"
+              echo "NUVIO_RELEASE_KEY_ALIAS=$KEY_ALIAS"
+              echo "NUVIO_RELEASE_KEY_PASSWORD=$KEY_PASSWORD"
+              echo "TRAKT_CLIENT_ID=$TRAKT_CLIENT_ID"
+              echo "TRAKT_CLIENT_SECRET=$TRAKT_CLIENT_SECRET"
+              echo "TRAKT_REDIRECT_URI=https://whiteak.github.io/Trakt-return/"
+            } > local.properties
+            ./gradlew :androidApp:assembleFullDebug -Pnuvio.android.distribution=full -Pnuvio.ios.distribution=appstore --stacktrace
+            cp androidApp/build/outputs/apk/full/debug/androidApp-full-debug.apk "$RUNNER_TEMP/Requiem-Android-$VERSION.apk"
+          fi
+      - name: Publish to whiteak/Requiem
+        env:
+          GH_TOKEN: ${{ secrets.REQUIEM_TOKEN }}
+          APP: ${{ inputs.app }}
+          VERSION: ${{ steps.v.outputs.version }}
+          BASE: ${{ steps.v.outputs.base }}
+        run: |
+          if [ "$APP" = tv ]; then file="$RUNNER_TEMP/Requiem-TV-$VERSION.apk"; what="Requiem for the TV"; else file="$RUNNER_TEMP/Requiem-Android-$VERSION.apk"; what="Requiem for Android phones"; fi
+          {
+            printf '%s %s, built on Nuvio %s with Prism inside.\n\n' "$what" "$VERSION" "$BASE"
+            printf 'Built from %s@%s and prism@%s (%s)\n' "$([ "$APP" = tv ] && echo NuvioTV || echo NuvioMobile)" "$(git -C app rev-parse HEAD)" "$(git -C requiem rev-parse HEAD)" "${{ inputs.requiem_ref }}"
+          } > "$RUNNER_TEMP/notes.md"
+          # The tag (phone-*/tv-*) is not a version number on purpose: each app reads its own version from its APK's
+          # name, so the phone never mistakes a TV release for an update, and the other way round.
+          prerelease=""
+          case "$VERSION" in *-*) prerelease="--prerelease" ;; esac
+          for i in 1 2 3 4; do
+            gh release create "$APP-$VERSION" "$file" --repo "$REQUIEM_REPO" \
+              --title "$what $VERSION" --notes-file "$RUNNER_TEMP/notes.md" $prerelease && break
+            [ "$i" = 4 ] && exit 1
+            sleep $((i * 5))
+          done
+          # Keep only the newest 2 releases of this app (tags stay, so numbering never goes backwards).
+          gh release list --repo "$REQUIEM_REPO" --limit 100 --json tagName,createdAt --jq 'sort_by(.createdAt) | reverse | .[].tagName' |
+            grep "^$APP-" | tail -n +3 | while read -r old; do gh release delete "$old" --repo "$REQUIEM_REPO" --yes || true; done
+
+  iphone:
+    name: Build Requiem iphone
+    if: inputs.app == 'iphone'
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      GRADLE_OPTS: -Dfile.encoding=UTF-8
+      IOS_CONFIGURATION: Release
+      KOTLIN_DAEMON_JVMARGS: -Xmx2048M
+      NUVIO_GRADLE_JVMARGS: -Xmx4608M -Dfile.encoding=UTF-8 -XX:MaxMetaspaceSize=768M
+      NUVIO_KOTLIN_NATIVE_JVMARGS: -Xmx4608M
+      GH_TOKEN: ${{ secrets.REQUIEM_TOKEN }}
+    steps:
+      - name: Check out Requiem's code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.requiem_ref }}
+          path: requiem
+      - name: Check out the app's base
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ env.MOBILE_REPO }}
+          ref: ${{ env.BASE_BRANCH }}
+          path: app
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Cache Kotlin Native
+        uses: actions/cache@v5
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('app/gradle/libs.versions.toml') }}
+          restore-keys: |
+            konan-${{ runner.os }}-${{ runner.arch }}-
+      - name: Use GNU sed and grep (apply.sh is written for them)
+        run: |
+          brew install gnu-sed grep
+          echo "$(brew --prefix gnu-sed)/libexec/gnubin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix grep)/libexec/gnubin" >> "$GITHUB_PATH"
+      - name: Pick the version
+        id: v
+        run: |
+          [ -n "$GH_TOKEN" ] || { echo "::error::Add the REQUIEM_TOKEN secret (a token that can write to whiteak/Requiem)."; exit 1; }
+          base=$(sed -n 's/^MARKETING_VERSION=//p' app/iosApp/Configuration/Version.xcconfig | tr -d '[:space:]')
+          base_code=$(sed -n 's/^CURRENT_PROJECT_VERSION=//p' app/iosApp/Configuration/Version.xcconfig | tr -d '[:space:]')
+          tags=$(gh api "repos/$REQUIEM_REPO/tags?per_page=100" --jq '.[].name')
+          last=$(printf '%s\n' "$tags" | sed -n "s/^iphone-$(printf '%s' "$base" | sed 's/[.]/\\./g')\\.\([0-9][0-9]*\)$/\1/p" | sort -n | tail -1)
+          n=$(( ${last:-0} + 1 )); [ "$n" -ge "$IPHONE_FIRST_N" ] || n=$IPHONE_FIRST_N
+          echo "version=$base.$n" >> "$GITHUB_OUTPUT"
+          echo "code=$(( base_code * 1000 + n ))" >> "$GITHUB_OUTPUT"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "Building Requiem iPhone $base.$n"
+      - name: Turn the app into Requiem
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+          VERSION_CODE: ${{ steps.v.outputs.code }}
+          TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
+        run: |
+          sed -i "s/^MARKETING_VERSION=.*/MARKETING_VERSION=$VERSION/; s/^CURRENT_PROJECT_VERSION=.*/CURRENT_PROJECT_VERSION=$VERSION_CODE/" app/iosApp/Configuration/Version.xcconfig
+          # Prism's extra app icons are Prism pictures, so Requiem leaves them out.
+          : > requiem/mobile/icons.txt
+          bash requiem/mobile/apply.sh "$PWD/app"
+          bash requiem/ios/apply.sh "$PWD/app"
+          bash requiem/requiem/mobile/ios-on-prism.sh "$PWD/app"
+          # The build reads its settings from local.properties (it must exist). Trakt sign-in needs TRAKT_CLIENT_ID.
+          touch app/local.dev.properties
+          {
+            echo "TRAKT_CLIENT_ID=${TRAKT_CLIENT_ID}"
+            echo "TRAKT_REDIRECT_URI=https://whiteak.github.io/Trakt-return/"
+          } > app/local.properties
+      - name: Verify Apple toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          bash requiem/requiem/mobile/ios-old-sdk.sh "$PWD/app"
+      - name: Prepare iOS dependencies
+        run: ./app/scripts/prepare-ios-dependencies.sh
+      - name: Build unsigned IPA
+        run: |
+          set -o pipefail
+          ./app/scripts/build-ios-ipa.sh "${{ steps.v.outputs.version }}" 2>&1 | tee "$RUNNER_TEMP/build.log"
+      - name: Show build errors
+        if: failure()
+        run: |
+          errors=$(grep -E -A6 '^e: |error:|\* What went wrong' "$RUNNER_TEMP/build.log" | grep -v 'warning:' | cut -c1-300 | head -200 || true)
+          echo "$errors"
+          echo "::error title=Build errors::$(printf '%s' "$errors" | sed ':a;N;$!ba;s/%/%25/g;s/\r//g;s/\n/%0A/g')"
+      - name: Publish to whiteak/Requiem
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+          BASE: ${{ steps.v.outputs.base }}
+        run: |
+          ipa="$(ls app/build/ios-ipa/*.ipa | head -n 1)"
+          file="Requiem-iOS-${VERSION}.ipa"
+          cp "$ipa" "$file"
+          {
+            printf 'Requiem for iPhone %s (unsigned IPA: sideload with SideStore or AltStore), built on Nuvio %s with Prism inside.\n\n' "$VERSION" "$BASE"
+            printf 'Built from NuvioMobile@%s and prism@%s (%s)\n' "$(git -C app rev-parse HEAD)" "$(git -C requiem rev-parse HEAD)" "${{ inputs.requiem_ref }}"
+          } > notes.md
+          for i in 1 2 3 4; do
+            gh release create "iphone-$VERSION" "$file" --repo "$REQUIEM_REPO" --latest=false \
+              --title "Requiem for iPhone $VERSION" --notes-file notes.md && break
+            [ "$i" = 4 ] && exit 1
+            sleep $((i * 10))
+          done
+          gh release list --repo "$REQUIEM_REPO" --limit 100 --json tagName,createdAt --jq 'sort_by(.createdAt) | reverse | .[].tagName' |
+            grep '^iphone-' | tail -n +3 | while read -r old; do gh release delete "$old" --repo "$REQUIEM_REPO" --yes || true; done
