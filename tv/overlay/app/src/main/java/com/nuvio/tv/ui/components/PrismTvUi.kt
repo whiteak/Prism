@@ -97,7 +97,7 @@ object PrismTvIntro {
             var c: Context? = context
             while (c is ContextWrapper && c !is ComponentActivity) c = c.baseContext
             (c as? ComponentActivity)?.lifecycle?.addObserver(
-                LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP) stop() },
+                LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP) { PrismTvSounds.stop(); stop() } },
             )
             observing = true
         }
@@ -107,7 +107,7 @@ object PrismTvIntro {
         holding = true
         pressed = false
         PrismTvSounds.play(context, "Opening")
-        main.postDelayed({ stop() }, look.openingSeconds.coerceIn(1, 30) * 1000L)
+        main.postDelayed({ holding = false }, look.openingSeconds.coerceIn(1, 30) * 1000L)
     }
 
     fun skipOnKey(event: android.view.KeyEvent): Boolean {
