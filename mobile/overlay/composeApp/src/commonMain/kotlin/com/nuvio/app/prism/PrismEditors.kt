@@ -453,7 +453,8 @@ internal fun PrismSoundPanel(
 
     fun processed(): PrismPcm? {
         val p = pcm ?: return null
-        return PrismAudio.process(p, (range.start * p.durationMs).toLong(), (range.endInclusive * p.durationMs).toLong(), level, volume)
+        val fadeOutMs = if (moment == PrismMoment.Opening) 2000L else 0L
+        return PrismAudio.process(p, (range.start * p.durationMs).toLong(), (range.endInclusive * p.durationMs).toLong(), level, volume, fadeOutMs)
     }
 
     PrismPanel(

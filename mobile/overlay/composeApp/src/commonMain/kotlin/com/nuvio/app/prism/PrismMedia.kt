@@ -14,8 +14,10 @@ import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.PI
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 import kotlinx.coroutines.Dispatchers
@@ -239,9 +241,10 @@ object PrismAudio {
 
     /**
      * The part from [startMs] to [endMs], evened out to a steady loudness when [level] is on,
-     * then turned up or down by [volume], with short fades so it doesn't click.
+     * then turned up or down by [volume], with short fades so it doesn't click. Optionally fades
+     * out over [fadeOutMs] milliseconds at the end with a cosine window.
      */
-    fun process(pcm: PrismPcm, startMs: Long, endMs: Long, level: Boolean, volume: Float): PrismPcm {
+    fun process(pcm: PrismPcm, startMs: Long, endMs: Long, level: Boolean, volume: Float, fadeOutMs: Long = 0): PrismPcm {
         val ch = pcm.channels
         val from = (startMs * pcm.sampleRate / 1000).toInt().coerceIn(0, pcm.frames)
         val to = (endMs * pcm.sampleRate / 1000).toInt().coerceIn(from, pcm.frames)
@@ -263,6 +266,8 @@ object PrismAudio {
         }
         val fade = min(part.size / ch / 4, pcm.sampleRate / 80)
         val frames = part.size / ch
+        val fadeOutFrames = (fadeOutMs * pcm.sampleRate / 1000).toInt().coerceIn(0, frames / 2)
+        val fadeOutStart = frames - fadeOutFrames
         val out = ShortArray(part.size)
         for (f in 0 until frames) {
             val edge = when {
@@ -271,9 +276,15 @@ object PrismAudio {
                 f >= frames - fade -> (frames - 1 - f).toFloat() / fade
                 else -> 1f
             }
+            val tail = if (fadeOutFrames > 0 && f >= fadeOutStart) {
+                val p = (f - fadeOutStart).toDouble() / max(1, fadeOutFrames - 1)
+                0.5 * (1 + cos(PI * p))
+            } else {
+                1.0
+            }
             for (c in 0 until ch) {
                 val i = f * ch + c
-                out[i] = softClip(part[i] * gain * edge)
+                out[i] = softClip(part[i] * gain * edge * tail.toFloat())
             }
         }
         return PrismPcm(pcm.sampleRate, ch, out)
