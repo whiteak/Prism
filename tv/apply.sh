@@ -12,7 +12,7 @@ sed -i 's#[A-Za-z ]* · built on Nuvio#Prism · built on Nuvio#' app/src/main/re
 sed -i 's#"com.nuviodebug.com"#"com.prism.tv"#' app/build.gradle.kts
 grep -q 'com.prism.tv' app/build.gradle.kts
 
-# In-app updates come from the private repo (read with the UPDATE_TOKEN key); only Prism's TV APK counts.
+# In-app updates come from Prism's public releases (no key); only Prism's TV APK counts.
 sed -i 's#RELEASE_ASSET_PREFIX = "Ethereal-"#RELEASE_ASSET_PREFIX = "Prism-TV-"#' app/src/full/java/com/nuvio/tv/updater/AbiSelector.kt
 grep -q '"Prism-TV-"' app/src/full/java/com/nuvio/tv/updater/AbiSelector.kt
 sed -i 's#"GITHUB_REPO", "\\"NuvioTV\\""#"GITHUB_REPO", "\\"prism\\""#' app/build.gradle.kts
@@ -31,7 +31,6 @@ perl -0pi -e 's/val response = gitHubReleaseApi\.getLatestRelease\(owner = owner
 dl=app/src/full/java/com/nuvio/tv/updater/ApkDownloader.kt
 perl -0pi -e 's/\.url\(url\)\n(\s*)\.build\(\)/.url(url)\n$1.apply { editionDownloadHeaders(url).forEach { (k, v) -> header(k, v) } }\n$1.build()/' "$dl"
 grep -q 'editionDownloadHeaders(url)' "$dl"
-sed -i "s#@UPDATE_TOKEN@#${UPDATE_TOKEN:-}#" app/src/main/java/com/nuvio/tv/updater/EditionUpdateAuth.kt
 
 # The opening: the look's picture (or Prism's art) with glints, its logo and quote, held for its seconds.
 f=app/src/main/java/com/nuvio/tv/ui/components/StartupSplashScreen.kt

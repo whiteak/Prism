@@ -2,12 +2,8 @@ package com.nuvio.tv.updater
 
 import okhttp3.OkHttpClient
 
-// Prism (shared with the Supernatural edition): releases live in a private repo, so the updater reads them with a read-only key
-// (filled in at build time from the UPDATE_TOKEN secret).
-private const val EDITION_UPDATE_TOKEN = "@UPDATE_TOKEN@"
-
-private fun editionAuthHeaders(): Map<String, String> =
-    if (EDITION_UPDATE_TOKEN.isBlank()) emptyMap() else mapOf("Authorization" to "Bearer $EDITION_UPDATE_TOKEN")
+// Prism's releases are public, so the updater sends no key.
+private fun editionAuthHeaders(): Map<String, String> = emptyMap()
 
 fun editionGitHubClient(base: OkHttpClient): OkHttpClient = base.newBuilder()
     .addInterceptor { chain ->
