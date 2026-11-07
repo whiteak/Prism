@@ -88,15 +88,15 @@ Always re-clone fresh, because the scripts are not idempotent. To compile withou
 
 ## Build & release (`prism.yml`)
 
-- Manual only: Actions > Build Prism > Run workflow. Inputs: `apps` = all | phone | phone-tv, `force`.
+- Manual only: Actions > Build Prism > Run workflow. Inputs: `apps` = all | phone | phone-tv, `force`, `keep_previous` = 2 | 1.
 - The check job resolves the fork SHAs and skips the release if the last `prism-N` has the same "Built from" stamp
   (unless `force`). It then creates a **draft** release `prism-N` (N = run number + 100).
 - Phone and TV are built on ubuntu (JDK 17) as `assembleFullDebug`, signed with `SIGNING_KEYSTORE`, alias `ethereal`.
   The PC is built on windows (JDK 21) with `packageMsi`, bundles libVLC 3.0.21, and has a fixed upgrade UUID.
   **Never change the upgrade UUID**, or installs stop upgrading in place.
 - Versions: phone uses `<fork MARKETING_VERSION>.<N>`, TV uses `<fork versionName>.<N>`, PC uses `1.0.<N>`.
-- The publish job un-drafts the release, keeps only the newest 2 `prism-*` releases (plus the newest one with a PC
-  build), and deletes Actions artifacts.
+- The publish job un-drafts the release, keeps the new release plus the previous `keep_previous` ones (input, default 2, so two
+  builds to roll back to) plus the newest one with a PC build, and deletes Actions artifacts.
 - Releases are **never marked latest**. The in-app updaters read the release list and only take assets prefixed
   `Prism-Android-` / `Prism-TV-`. Don't rename the assets.
 - Secrets: `SIGNING_KEYSTORE`, `SIGNING_KEY_PASSWORD`, `TRAKT_CLIENT_ID`, `TRAKT_CLIENT_SECRET`.
