@@ -12,7 +12,7 @@ sed -i 's#<color name="edition_splash_background">[^<]*</color>#<color name="edi
 sed -i 's#"com.nuviodebug.com"#"com.prism.app"#' androidApp/build.gradle.kts
 grep -q 'com.prism.app' androidApp/build.gradle.kts
 
-# In-app updates come from the private repo (read with the UPDATE_TOKEN key); only Prism's phone APK counts.
+# In-app updates come from Prism's public releases (no key); only Prism's phone APK counts.
 upd=composeApp/src/commonMain/kotlin/com/nuvio/app/features/updater/AppUpdaterRepository.kt
 sed -i 's#RELEASE_ASSET_PREFIX = "Ethereal-"#RELEASE_ASSET_PREFIX = "Prism-Android-"#' "$upd"
 sed -i 's#startsWith(RELEASE_ASSET_PREFIX, ignoreCase = true) }.ifEmpty { apks }#startsWith(RELEASE_ASSET_PREFIX, ignoreCase = true) }#' "$upd"
@@ -27,7 +27,6 @@ sed -i 's#UpdateChannel.STABLE -> listOf(json.decodeFromString<GitHubReleaseDto>
 grep -q 'STABLE -> "releases?per_page=100"' "$upd"; grep -q 'STABLE -> json.decodeFromString<List<GitHubReleaseDto>>' "$upd"
 dl=composeApp/src/androidFull/kotlin/com/nuvio/app/features/updater/AndroidAppUpdaterPlatform.kt
 perl -0pi -e 's/\.url\(assetUrl\)\n(\s*)\.build\(\)/.url(assetUrl)\n$1.apply { editionDownloadHeaders(assetUrl).forEach { (k, v) -> header(k, v) } }\n$1.build()/' "$dl"
-sed -i "s#@UPDATE_TOKEN@#${UPDATE_TOKEN:-}#" composeApp/src/commonMain/kotlin/com/nuvio/app/features/updater/EditionUpdateAuth.kt
 grep -q '"Prism-Android-"' "$upd"; ! grep -q 'ifEmpty { apks }' "$upd"
 grep -q 'whiteak/prism/' "$upd"; grep -q 'editionAuthHeaders()' "$upd"; grep -q 'apiUrl ?: asset' "$upd"; grep -q 'editionTagged()' "$upd"; grep -q 'editionDownloadHeaders(assetUrl)' "$dl"
 
