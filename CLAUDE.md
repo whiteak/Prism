@@ -70,9 +70,8 @@ Rules for patches:
 - Anchors match **LF line endings**. The Windows job sets `core.autocrlf false`. Never commit CRLF.
 - If an anchor stops matching after an upstream sync, read the fork file at the pinned branch and update the
   anchor. Don't loosen the regex until it matches anything.
-- `@UPDATE_TOKEN@` in `Edition*UpdateAuth.kt` is left over from when Prism's repo was private. `prism.yml` passes
-  no token, so the placeholder becomes an empty string and the updater sends no key, which works because the repo
-  is public. Don't add a token. Removing the placeholder and the "private repo" comments is optional cleanup.
+- The updater sends no key: Prism's releases repo is public, so `editionAuthHeaders()` in `Edition*UpdateAuth.kt`
+  returns an empty map and `prism.yml` passes no token. Don't add a token.
 
 ### Checking a patch
 **Jason builds only through GitHub Actions. Don't run Gradle or set up a local Android/Windows build.**
