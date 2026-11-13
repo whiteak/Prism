@@ -105,12 +105,13 @@ object PrismTvRows {
         imdbId = id.takeIf { it.startsWith("tt") },
     )
 
-    /** Finds movies and shows by name on Cinemeta, for adding to a row or a show card. */
+    /** Finds movies and shows by name on Cinemeta, for adding to a row or a show card. Up to 20 of each type,
+     *  enough to fill the TV's poster picker. */
     fun search(query: String): List<PrismTvRowItem> {
         val q = URLEncoder.encode(query, "UTF-8").replace("+", "%20")
         return listOf("movie", "series").flatMap { type ->
             val metas = get("$CINEMETA/catalog/$type/top/search=$q.json")?.optJSONArray("metas") ?: return@flatMap emptyList()
-            (0 until minOf(metas.length(), 10)).mapNotNull { i ->
+            (0 until minOf(metas.length(), 20)).mapNotNull { i ->
                 val m = metas.optJSONObject(i) ?: return@mapNotNull null
                 val id = m.optString("imdb_id").ifBlank { m.optString("id") }.takeIf { it.isNotBlank() } ?: return@mapNotNull null
                 PrismTvRowItem(id, type, m.optString("name"), m.optString("poster").takeIf { it.isNotBlank() }, m.optString("releaseInfo").takeIf { it.isNotBlank() })
