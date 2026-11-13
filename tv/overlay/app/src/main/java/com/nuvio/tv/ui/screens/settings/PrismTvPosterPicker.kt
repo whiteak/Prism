@@ -76,11 +76,12 @@ internal fun PrismTvPosterPicker(
     onDismiss: () -> Unit,
 ) {
     val first = remember { FocusRequester() }
-    LaunchedEffect(Unit) { first.requestFocusAfterFrames() }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false),
     ) {
+        // Inside the dialog, so it waits for the dialog window's own frames before asking for focus.
+        LaunchedEffect(Unit) { first.requestFocusAfterFrames() }
         Column(
             modifier = Modifier
                 .fillMaxSize()
