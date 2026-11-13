@@ -1067,8 +1067,8 @@ internal object PrismTvHome {
     }
 }
 
-/** Searches Cinemeta for what's typed and offers the results to pick from. */
-private fun prismFindTitle(context: Context, scope: kotlinx.coroutines.CoroutineScope, seriesOnly: Boolean, then: (com.nuvio.tv.ui.components.PrismTvRowItem) -> Unit) {
+/** Searches Cinemeta for what's typed and hands the results to [show], which puts them on the poster picker. */
+private fun prismFindTitle(context: Context, scope: kotlinx.coroutines.CoroutineScope, seriesOnly: Boolean, show: (String, List<com.nuvio.tv.ui.components.PrismTvRowItem>) -> Unit) {
     prismAsk(context, if (seriesOnly) "Find a show" else "Find a movie or show", "") { query ->
         scope.launch {
             val found = withContext(Dispatchers.IO) { com.nuvio.tv.ui.components.PrismTvRows.search(query) }.filter { !seriesOnly || it.type == "series" }
@@ -1076,7 +1076,7 @@ private fun prismFindTitle(context: Context, scope: kotlinx.coroutines.Coroutine
                 Toast.makeText(context, "Nothing found for \"$query\"", Toast.LENGTH_LONG).show()
                 return@launch
             }
-            prismChoose(context, "Pick one", found.map { "${it.name}${it.year?.let { y -> " ($y)" } ?: ""} · ${if (it.type == "series") "show" else "movie"}" }) { then(found[it]) }
+            show(query, found)
         }
     }
 }
@@ -1162,19 +1162,23 @@ private fun PrismTvRowPage(look: JSONObject, id: String, edit: ((JSONObject) -> 
     val index = rows.indexOfFirst { it.optString("id") == id }
     val row = rows.getOrNull(index) ?: return
     val items = PrismTvHome.items(row)
+    var found by remember { mutableStateOf<Pair<String, List<com.nuvio.tv.ui.components.PrismTvRowItem>>?>(null) }
     fun changeRow(block: (JSONObject) -> Unit) = edit { l ->
         PrismTvHome.rows(l).firstOrNull { it.optString("id") == id }?.let(block)
+    }
+    found?.let { (query, results) ->
+        PrismTvPosterPicker("Results for \"$query\"", results, onPick = { t ->
+            changeRow { r ->
+                (r.optJSONArray("items") ?: JSONArray().also { r.put("items", it) }).put(
+                    JSONObject().put("id", t.id).put("type", t.type).put("name", t.name).put("poster", t.poster ?: JSONObject.NULL).put("year", t.year ?: JSONObject.NULL)
+                )
+            }
+        }, onDismiss = { found = null })
     }
     LazyColumn {
         item("add") {
             SettingsActionRow(title = "Add a movie or show", subtitle = "Type part of its name", onClick = {
-                prismFindTitle(context, scope, seriesOnly = false) { t ->
-                    changeRow { r ->
-                        (r.optJSONArray("items") ?: JSONArray().also { r.put("items", it) }).put(
-                            JSONObject().put("id", t.id).put("type", t.type).put("name", t.name).put("poster", t.poster ?: JSONObject.NULL).put("year", t.year ?: JSONObject.NULL)
-                        )
-                    }
-                }
+                prismFindTitle(context, scope, seriesOnly = false) { query, results -> found = query to results }
             })
         }
         item("rename") {
@@ -1236,15 +1240,19 @@ private fun PrismTvCardsPage(look: JSONObject, edit: ((JSONObject) -> Unit) -> U
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val cards = PrismTvHome.cards(look)
+    var found by remember { mutableStateOf<Pair<String, List<com.nuvio.tv.ui.components.PrismTvRowItem>>?>(null) }
+    found?.let { (query, results) ->
+        PrismTvPosterPicker("Results for \"$query\"", results, onPick = { t ->
+            edit { l ->
+                if (PrismTvHome.cards(l).isEmpty()) l.remove("showCard")
+                (l.optJSONArray("showCards") ?: JSONArray().also { l.put("showCards", it) }).put(JSONObject().put("id", t.id).put("type", t.type).put("name", t.name).put("poster", t.poster ?: JSONObject.NULL).put("year", t.year ?: JSONObject.NULL))
+            }
+        }, onDismiss = { found = null })
+    }
     LazyColumn {
         item("add") {
             SettingsActionRow(title = "Add a show", subtitle = "Play random episode picks one of these shows", onClick = {
-                prismFindTitle(context, scope, seriesOnly = true) { t ->
-                    edit { l ->
-                        if (PrismTvHome.cards(l).isEmpty()) l.remove("showCard")
-                        (l.optJSONArray("showCards") ?: JSONArray().also { l.put("showCards", it) }).put(JSONObject().put("id", t.id).put("type", t.type).put("name", t.name).put("poster", t.poster ?: JSONObject.NULL).put("year", t.year ?: JSONObject.NULL))
-                    }
-                }
+                prismFindTitle(context, scope, seriesOnly = true) { query, results -> found = query to results }
             })
         }
         if (cards.size > 1) {
@@ -1263,16 +1271,22 @@ private fun PrismTvCardsPage(look: JSONObject, edit: ((JSONObject) -> Unit) -> U
             item("c$i") {
                 val soundKey = "card:${c.optString("type", "series")}:${c.optString("id")}"
                 val ownSounds = PrismTvMedia.soundKeys(look, soundKey).size
-                SettingsActionRow(title = c.optString("name"), subtitle = if (ownSounds > 0) "Its own sound plays first" else "Plays the Play random episode sound", onClick = {
-                    prismChoose(context, c.optString("name"), listOf("Move earlier", "Move later", "Remove", "Its own sound")) { which ->
-                        if (which == 3) { openSound(soundKey, "Sound for " + c.optString("name")); return@prismChoose }
-                        edit { l ->
-                            val list = PrismTvHome.cards(l)
-                            l.remove("showCard")
-                            l.put("showCards", if (which == 2) JSONArray(list.filterIndexed { j, _ -> j != i }) else PrismTvHome.moved(list, i, if (which == 0) -1 else 1))
+                PrismTvCardRow(
+                    name = c.optString("name"),
+                    year = c.optString("year").takeIf { it.isNotBlank() && it != "null" },
+                    poster = c.optString("poster").takeIf { it.isNotBlank() && it != "null" },
+                    subtitle = if (ownSounds > 0) "Its own sound plays first" else "Plays the Play random episode sound",
+                    onClick = {
+                        prismChoose(context, c.optString("name"), listOf("Move earlier", "Move later", "Remove", "Its own sound")) { which ->
+                            if (which == 3) { openSound(soundKey, "Sound for " + c.optString("name")); return@prismChoose }
+                            edit { l ->
+                                val list = PrismTvHome.cards(l)
+                                l.remove("showCard")
+                                l.put("showCards", if (which == 2) JSONArray(list.filterIndexed { j, _ -> j != i }) else PrismTvHome.moved(list, i, if (which == 0) -1 else 1))
+                            }
                         }
-                    }
-                })
+                    },
+                )
             }
         }
     }
