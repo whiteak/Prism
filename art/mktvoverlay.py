@@ -11,9 +11,10 @@ BG = (8, 6, 18)
 VARIANTS = ['arctic_blue', 'copper', 'emerald', 'graphite', 'rose_gold']
 res = 'app/src/main/res'
 targets = ['drawable-nodpi/edition_loading_art.webp', 'drawable-nodpi/tv_banner.png', 'drawable/tv_banner.png',
-           'drawable/app_logo_mark.png', 'drawable/ic_launcher.png']
+           'drawable/ic_launcher.png']
+# The logo mark and wordmarks: wherever NuvioTV keeps them (drawable-nodpi since Nuvio 1.2, drawable before).
 targets += [os.path.relpath(p, os.path.join(repo, res)) for p in
-            glob.glob(os.path.join(repo, res, 'drawable', 'app_logo_wordmark*.png')) +
+            glob.glob(os.path.join(repo, res, 'drawable*', 'app_logo_*.png')) +
             glob.glob(os.path.join(repo, res, 'mipmap-*', 'ic_launcher*.png')) +
             glob.glob(os.path.join(repo, res, 'mipmap-*', 'banner*.png'))]
 def fill(m, w, h):

@@ -6,6 +6,11 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 cd "$1"
 cp -R "$here/overlay/." .
+# Every logo mark and wordmark NuvioTV ships must have Prism's version, or the TV shows Ethereal's
+# (Nuvio moved them from drawable/ to drawable-nodpi/ in 1.2; rerun art/mktvoverlay.py if this fails).
+for f in app/src/main/res/drawable*/app_logo_*.png; do
+  [ -e "$here/overlay/$f" ] || { echo "Prism has no $f: run art/mktvoverlay.py" >&2; exit 1; }
+done
 grep -rlZ 'name="app_name"' app/src --include='*.xml' | xargs -0 sed -i 's#<string name="app_name">[^<]*</string>#<string name="app_name">Prism</string>#'
 sed -i 's#<color name="splash_background">[^<]*</color>#<color name="splash_background">\#080612</color>#' app/src/main/res/values/colors.xml
 sed -i 's#[A-Za-z ]* · built on Nuvio#Prism · built on Nuvio#' app/src/main/res/values/strings.xml
