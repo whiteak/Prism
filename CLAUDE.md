@@ -15,7 +15,7 @@ This repo's `main` branch is Prism (and Clipper). The `requiem` branch is **Requ
 | TV      | whiteak/NuvioTV `base/prism`                     | `tv/apply.sh`                         | `Prism-TV-<v>.apk`          |
 | Clipper | none (standalone app in `clipper/`)              | none                                  | `Clipper-1.0.<n>.apk`       |
 
-**`base/prism` is Prism's own fixed base** in each fork (pinned on 2 Nov 2026 to what prism-107 was built from).
+**`base/prism` is Prism's own fixed base** in each fork (moved on 14 Nov 2026, at Jason's request, to upstream NuvioMobile 0.6.12 `cmp-rewrite` and NuvioTV 1.2.0-beta.1 `dev`; the PC's desktop code was updated to match).
 It does NOT follow Ethereal (`cmp-rewrite` / `dev`) or upstream Nuvio. Move it forward, or change fork code under
 Prism, only when Jason asks, and only on `base/prism`. The branch names are set in `env:` in `prism.yml` and `check.yml`.
 
