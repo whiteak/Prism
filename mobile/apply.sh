@@ -188,8 +188,13 @@ manifest=composeApp/src/androidMain/AndroidManifest.xml
 perl -0pi -e 's#(\n\s*</application>)#\n        <activity\n            android:name="com.nuvio.app.prism.PrismClipActivity"\n            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"\n            android:exported="false" />$1#' "$manifest"
 grep -q 'prism.PrismClipActivity' "$manifest"
 # Account (Nuvio sign-in) and Watch party need Nuvio's own servers, so they don't work in Prism: both come out of
-# Settings, on the phone and the PC. Switch profile and Tracking stay.
+# Settings, on the phone and the PC. Switch profile stays.
 root=composeApp/src/commonMain/kotlin/com/nuvio/app/features/settings/SettingsRootPage.kt
-perl -0pi -e 's/\n\s*SettingsNavigationRow\(\n\s*title = stringResource\(Res\.string\.compose_settings_page_account\),.*?\n(\s*)SettingsGroupDivider\(isTablet = isTablet\)\n(\s*SettingsNavigationRow\(\n\s*title = stringResource\(Res\.string\.compose_settings_page_tracking\))/\n$2/s' "$root"
-! grep -q 'compose_settings_page_account),' "$root"; ! grep -q 'Res.string.party_title' "$root"; grep -q 'compose_settings_page_tracking' "$root"
+# Settings > You: drop the Account row (and the divider before Switch profile) and the Watch party row.
+perl -0pi -e 's/\n(\s*)SettingsPageRow\(\n\s*page = SettingsPage\.Account,\n.*?\n\s*\)\n(\s*if \(onSwitchProfileClick != null\) \{)\n\s*SettingsGroupDivider\(isTablet = isTablet\)\n/\n$2\n/s' "$root"
+perl -0pi -e 's/\n\s*if \(onWatchPartyClick != null\) \{\n\s*SettingsGroupDivider\(isTablet = isTablet\)\n\s*SettingsNavigationRow\(\n\s*title = stringResource\(Res\.string\.party_title\),.*?\n\s*\)\n\s*\}\n/\n/s' "$root"
+# With no other profiles to switch to, You is empty, so leave its card out.
+perl -0pi -e 's/(SettingsCategory\.entries\.filter \{ category == null \|\| it == category \})\.forEach/$1.filter { it != SettingsCategory.You || onSwitchProfileClick != null }.forEach/' "$root"
+grep -q 'it != SettingsCategory.You || onSwitchProfileClick != null' "$root"
+! grep -q 'SettingsPage.Account,' "$root" || exit 1; ! grep -q 'Res.string.party_title' "$root" || exit 1; grep -q 'compose_settings_root_switch_profile_title' "$root"
 echo "Prism applied (phone)."

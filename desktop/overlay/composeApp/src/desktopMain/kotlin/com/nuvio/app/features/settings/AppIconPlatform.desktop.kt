@@ -25,6 +25,12 @@ internal actual object AppIconPlatform {
     internal var chosen by mutableStateOf(runCatching { file.readText().trim().ifBlank { null } }.getOrNull())
         private set
 
+    // Prism's own file (above) already remembers the pick, so Nuvio's saved key isn't needed: returning null
+    // makes Nuvio read the pick from currentIconName().
+    actual fun loadSelectedIconKey(): String? = null
+
+    actual fun saveSelectedIconKey(key: String) {}
+
     actual fun currentIconName(): String? = chosen
 
     @OptIn(ExperimentalResourceApi::class)
