@@ -181,4 +181,7 @@ grep -q 'HiltViewModelFactory(navController.context, homeEntry)' "$main"
 tt=app/src/main/java/com/nuvio/tv/ui/theme/Theme.kt
 perl -0pi -e 's/val typography = buildNuvioTypography\(getFontFamily\(appFont\)\)/val typography = com.nuvio.tv.ui.components.prismTvTypography(getFontFamily(appFont)) { buildNuvioTypography(it) }/; s/(typography = typography,\n\s*)content = content/${1}content = { com.nuvio.tv.ui.components.PrismTvTextSize(content) }/' "$tt"
 grep -q 'prismTvTypography(getFontFamily(appFont))' "$tt"; grep -q 'PrismTvTextSize(content)' "$tt"
+# Look for updates again whenever Prism comes back to the screen, not only when it starts.
+perl -0pi -e 's/(\n([ \t]*)val updateViewModel: UpdateViewModel = hiltViewModel\(this\@MainActivity\)\n)/$1$2com.nuvio.tv.ui.components.PrismTvUpdateOnReturn(updateViewModel)\n/' app/src/main/java/com/nuvio/tv/MainActivity.kt
+grep -q 'PrismTvUpdateOnReturn(updateViewModel)' app/src/main/java/com/nuvio/tv/MainActivity.kt
 echo "Prism applied (TV)."

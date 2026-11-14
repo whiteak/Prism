@@ -197,4 +197,8 @@ perl -0pi -e 's/\n\s*if \(onWatchPartyClick != null\) \{\n\s*SettingsGroupDivide
 perl -0pi -e 's/(SettingsCategory\.entries\.filter \{ category == null \|\| it == category \})\.forEach/$1.filter { it != SettingsCategory.You || onSwitchProfileClick != null }.forEach/' "$root"
 grep -q 'it != SettingsCategory.You || onSwitchProfileClick != null' "$root"
 ! grep -q 'SettingsPage.Account,' "$root" || exit 1; ! grep -q 'Res.string.party_title' "$root" || exit 1; grep -q 'compose_settings_root_switch_profile_title' "$root"
+# Look for updates again whenever Prism comes back to the screen, not only when it starts.
+upd=composeApp/src/commonMain/kotlin/com/nuvio/app/features/updater/AppUpdaterBanner.kt
+perl -0pi -e 's/(\n([ \t]*)LaunchedEffect\(controller\) \{\n\s*controller\.ensureAutoCheckStarted\(\)\n\s*\}\n)/$1$2com.nuvio.app.prism.PrismUpdateOnReturn(controller)\n/' "$upd"
+grep -q 'com.nuvio.app.prism.PrismUpdateOnReturn(controller)' "$upd"
 echo "Prism applied (phone)."
